@@ -8,8 +8,6 @@ struct Vector
     float y;
     Vector() : x(0), y(0) {};
     Vector(const float& x, const float&y) : x(x), y(y) {};
-    Vector(const Vector& other) = default;
-    Vector(Vector&& other) = default;
 
     Vector& operator+=(const Vector& rhs)
     {
@@ -18,7 +16,7 @@ struct Vector
         return *this;
     }
 
-    Vector& operator-=(const Vector& lhs, const Vector rhs)
+    Vector& operator-=(const Vector rhs)
     {
         x -= rhs.x;
         y -= rhs.y;
@@ -29,12 +27,14 @@ struct Vector
     {
         x *= rhs;
         y *= rhs;
+        return *this;
     }
 
     Vector& operator/=(float rhs)
     {
         x /= rhs;
         y /= rhs;
+        return *this;
     }
 };
 
@@ -52,7 +52,7 @@ Vector operator-(const Vector& lhs, const Vector rhs)
 
 Vector operator*(const Vector& lhs, float rhs)
 {
-    return Vector(d*lhs.x, d*lhs.y);
+    return Vector(rhs*lhs.x, rhs*lhs.y);
 }
 
 Vector operator/(const Vector& lhs, float rhs)
