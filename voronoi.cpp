@@ -90,25 +90,29 @@ void processEvent(const CircleEvent& event, CircleQueue& events,
     lines.push_back(line1);
 }
 
-void processPoint(BeachLineT& beach, CircleQueue& events,
+void processPoint(BeachLineT& beach, BeachCompare& beach_compare,
+        CircleQueue& events,
         const Point& pt, Voronoi& voronoi)
 {
     // Update sweep location in beach line
-    beach.value_comp.sweep_y = pt.y;
+
+    beach_compare.sweep_y = pt.y;
 
     // insert two new intersections
-    Intersection dummy(&pt, nullptr, -1);
-    auto it = beach.lower_bound(dummy);
-    Point* ptA = nullptr;
-    Point* ptB = nullptr;
-    Point* ptC = nullptr;
-    Point* ptD = nullptr;
+    Intersection dummy{&pt, nullptr, -1};
+    bool success;
+    BeachLineT::iterator it1, it2;
+    it1 = beach.lower_bound(dummy);
+    const Point* ptA = nullptr;
+    const Point* ptB = nullptr;
+    const Point* ptC = nullptr;
+    const Point* ptD = nullptr;
     if(beach.empty()) {
         // add null intersection
         // no intersections to erase
         beach.emplace(&pt, nullptr, -1);
         beach.emplace(&pt, nullptr, +1);
-    } else if(it == beach.end()) {
+    } else if(it1 == beach.end()) {
         //  Since two intersections coming together forms an event and on the
         //  end there is no second intersection to merge, nothing to erase
         //
@@ -119,15 +123,16 @@ void processPoint(BeachLineT& beach, CircleQueue& events,
 
         // shouldn't happen
         throw -1;
-        it--;
-        ptA = it->pt0;
-        ptB = it->pt1;
+        it1--;
+        ptA = it1->pt0;
+        ptB = it1->pt1;
         ptC = &pt;
-        auto it2 = beach.emplace(ptB, ptC, -1);
-        auto it1 = it2; it1--;
+
+        std::tie(it2, success) = beach.emplace(ptB, ptC, -1);
+        it1 = it2; it1--;
         events.insert(*it1, *it2);
         beach.emplace(ptB, ptC, +1);
-    } else if(it == beach.begin()) {
+    } else if(it1 == beach.begin()) {
         //  Since two intersections coming together forms an event and on the
         //  end there is no second intersection to merge, nothing to erase
         //
@@ -140,10 +145,10 @@ void processPoint(BeachLineT& beach, CircleQueue& events,
 
         // shouldn't happen
         ptA = &pt;
-        ptB = it->pt0;
-        ptC = it->pt1;
-        auto it1 = beach.emplace(ptA, ptB, +1);
-        auto it2 = it1; it2++;
+        ptB = it1->pt0;
+        ptC = it1->pt1;
+        std::tie(it1, success) = beach.emplace(ptA, ptB, +1);
+        it2 = it1; it2++;
         events.insert(*it1, *it2);
         beach.emplace(ptA, ptB, -1);
     } else {
@@ -155,24 +160,24 @@ void processPoint(BeachLineT& beach, CircleQueue& events,
         //  points:         A   B     B   C
         //  new inter:          B  D  B
         // intersection >= so take the first point
-        auto it2 = it; it2++;
-        ptA = it->pt0;
-        ptB = it->pt1;
+        it2 = it1; it2++;
+        ptA = it1->pt0;
+        ptB = it1->pt1;
         ptC = it2->pt1;
         ptD = &pt;
 
         // Insert new intersection into beach, then create an event for the old
         // left and the new intersection point
-        it2 = beach.emplace(ptB, ptD, -1);
+        std::tie(it2, success) = beach.emplace(ptB, ptD, -1);
         it1 = it2; it1--;
         events.insert(*it1, *it2);
         auto left_event = *it1;
 
         // Insert new intersection int beach, then create a new event for the
         // old upper intersection and the new one
-        it1 = beach.emplace(ptB, ptD, +1);
+        std::tie(it1, success) = beach.emplace(ptB, ptD, +1);
         it2 = it1; it2++;
-        events.insert( *it1, *it2);
+        events.insert(*it1, *it2);
         auto right_event = *it2;
 
         // Erase the event that involved the meeting of our previous left and
@@ -180,7 +185,7 @@ void processPoint(BeachLineT& beach, CircleQueue& events,
         events.erase(left_event, right_event);
 
         // TODO add dangling too
-        voronoi.m_points.emplace_bacK();
+        voronoi.m_points.emplace_back();
         voronoi.m_points.back().x = 0.5*(ptB->x + pt.x);
         voronoi.m_points.back().y = 0.5*(ptB->y + pt.y);
     }
@@ -192,22 +197,35 @@ Voronoi computeVoronoi(const std::vector<Point>& points)
     std::vector<size_t> ordered(points.size());
     for(size_t ii = 0; ii < points.size(); ii++) ordered[ii] = ii;
     std::sort(ordered.begin(), ordered.end(),
-            [&](const Point& lhs, const Point& rhs) { return lhs.y > rhs.y; });
+            [&](size_t ii, size_t jj) { return points[ii].y > points[jj].y; });
 
-    BeachLineT beach;
+    std::vector<Line> vlines;
+    Voronoi voronoi;
+    BeachCompare beach_compare;
+    BeachLineT beach(beach_compare);
     CircleQueue events;
 
     // Travel downward so at each step take
+    size_t ii = 0;
     while(!events.empty() && ii < ordered.size()) {
-        if(events.empty()
-                || points[ordered[ii]].y > events.front().y) {
-            processPoint(beach, events, points[ordered[ii]]);
+
+        if(events.empty()) {
+            processPoint(beach, beach_compare, events, points[ordered[ii]],
+                    voronoi);
+            ii++;
         } else {
-            auto event = events.front();
-            events.pop_front();
-            processEvent(event);
+            const auto& evt = events.front();
+            if(points[ordered[ii]].y > evt.circle.center.y - evt.circle.radius) {
+                processPoint(beach, beach_compare, events, points[ordered[ii]],
+                        voronoi);
+                ii++;
+            } else {
+                events.pop_front();
+                processEvent(evt, events, beach, vlines);
+            }
         }
     }
 
+    return voronoi;
 }
 

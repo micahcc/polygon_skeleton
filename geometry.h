@@ -40,36 +40,43 @@ struct Vector
 
 typedef Vector Point;
 
+static
 Vector operator+(const Vector& lhs, const Vector rhs)
 {
     return Vector(lhs.x + rhs.x, lhs.y + rhs.y);
 }
 
+static
 Vector operator-(const Vector& lhs, const Vector rhs)
 {
     return Vector(lhs.x - rhs.x, lhs.y - rhs.y);
 }
 
+static
 Vector operator*(const Vector& lhs, float rhs)
 {
     return Vector(rhs*lhs.x, rhs*lhs.y);
 }
 
+static
 Vector operator/(const Vector& lhs, float rhs)
 {
     return Vector(lhs.x/rhs, lhs.y/rhs);
 }
 
+static
 float dot(const Vector& lhs, const Vector& rhs)
 {
     return lhs.x * rhs.x + lhs.y * rhs.y;
 }
 
+static
 float normSquared(const Vector& lhs)
 {
     return lhs.x * lhs.x + lhs.y * lhs.y;
 }
 
+static
 float norm(const Vector& lhs)
 {
     return std::sqrt(normSquared(lhs));

@@ -16,7 +16,6 @@ using std::get;
 struct Voronoi
 {
 public:
-    Voronoi(const std::vector<Point>& points);
 
     std::vector<tuple<Point, Point>> getLines()
     {
@@ -62,6 +61,10 @@ struct Circle
 
 struct Intersection
 {
+    Intersection(const Point* pt0, const Point* pt1, float sign) :
+        pt0(pt0), pt1(pt1), sign(sign) {};
+    Intersection() : pt0(nullptr), pt1(nullptr), sign(1) {};
+
     const Point* pt0;
     const Point* pt1;
     float sign;  // add or subtract the radical?
@@ -77,12 +80,14 @@ struct BeachCompare
 {
     float sweep_y;
 
-    bool operator()(Intersection& lhs, const Intersection& rhs)
+    bool operator()(const Intersection& lhs, const Intersection& rhs) const
     {
         // Compares the x index of thwo intersections. In the case where a point
         // is missing (nullptr), there is no intersection (or intersection is at
         // positive or negative infinity (depending on sign)
-
+        std::cerr << "Comparing: ("<< lhs.pt0 << ", " << lhs.pt1 <<")"
+            << " to (" << rhs.pt0 << ", " << rhs.pt1 << std::endl;
+        std::cerr << "Using sweep = " << sweep_y << std::endl;
         if(lhs.pt0 == nullptr && rhs.pt0 == nullptr) {
             // shouldn't really happen, maybe on the first point
             std::cerr << "Comparing two nulls!" << std::endl;
