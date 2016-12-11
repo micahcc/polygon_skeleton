@@ -82,4 +82,14 @@ float norm(const Vector& lhs)
     return std::sqrt(normSquared(lhs));
 }
 
+struct Line
+{
+    Point pt0;
+    Point pt1;
+};
 
+std::ostream& operator<<(std::ostream& os, const Point& pt)
+{
+    os << "(" << pt.x << ", " << pt.y << ")";
+    return os;
+}
