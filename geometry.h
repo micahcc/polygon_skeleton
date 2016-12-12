@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include <cmath>
 
 struct Vector
@@ -88,6 +89,7 @@ struct Line
     Point pt1;
 };
 
+static
 std::ostream& operator<<(std::ostream& os, const Point& pt)
 {
     os << "(" << pt.x << ", " << pt.y << ")";

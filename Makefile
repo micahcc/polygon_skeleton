@@ -1,9 +1,9 @@
 
 test: test.o voronoi.o
-	clang++ $^ -o $@ -std=c++11
+	clang++ $^ -o $@ -std=c++11 -g
 
-%.o: %.cpp
-	clang++ $< -c -o $@ -std=c++11
+%.o: %.cpp geometry.h
+	clang++ $< -c -o $@ -std=c++11 -g
 
 clean:
 	rm -f test.o voronoi.o test
