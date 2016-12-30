@@ -33,14 +33,14 @@ public:
         return out;
     }
 
-    const std::vector<Point> getPoints() const { return m_points; };
-
-
-    std::vector<Point> m_points;
-    std::vector<tuple<size_t, size_t>> m_segments;
+    const std::vector<Point> getInputPoints() const { return m_points; };
+    const std::vector<Point> getLines() const { return m_points; };
 
 private:
     friend VoronoiComputer;
+
+    std::vector<Point> m_points;
+    std::vector<tuple<size_t, size_t>> m_segments;
 };
 
 //Voronoi computeVoronoi(const std::vector<Point>& points);

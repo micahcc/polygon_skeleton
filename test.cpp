@@ -7,10 +7,9 @@ int main()
 {
     const size_t POINT_RADIUS = 5;
     std::vector<Point> points{
-        {10, 20},
-        {40, 80},
-        {22, 70},
-        {22, 33},
+        {0, 0},
+        {3, -1},
+        {-1, -5},
     };
 
     auto result = computeVoronoi(points);

@@ -1,4 +1,7 @@
 #include "voronoi.h"
+
+#include <cmath>
+
 #include "geometry.h"
 
 // Types
@@ -28,6 +31,31 @@ struct Intersection
     const Point* pt0;
     const Point* pt1;
     float sign;  // add or subtract the radical?
+};
+
+
+struct Boundary
+{
+    // a boundary connects the midline between two points with a circle point of
+    // the original two points and a third point.
+    const Point* start_pt0;
+    const Point* start_pt1;
+
+    const Point* circle_pt;
+
+    bool operator<(const Boundary& rhs)
+    {
+        return std::min(start_pt0->y, start_pt1->y) <
+            std::min(rhs.start_pt0->y, rhs.start_pt1->y);
+    }
+
+    bool operator==(const Boundary& rhs)
+    {
+        return ((start_pt0 == rhs.start_pt0 &&
+                 start_pt1 == rhs.start_pt1) ||
+                (start_pt0 == rhs.start_pt1 &&
+                 start_pt1 == rhs.start_pt0));
+    }
 };
 
 struct BeachCompare
@@ -213,14 +241,16 @@ private:
 class VoronoiComputer
 {
     public:
-    VoronoiComputer() : m_beach_compare(&sweep_y), m_beach(m_beach_compare)
+    VoronoiComputer() : m_beach_compare(&sweep_y), m_beach(m_beach_compare),
+        m_min_x(std::numeric_limits<double>::infinity()),
+        m_max_x(-std::numeric_limits<double>::infinity()),
+        m_min_y(std::numeric_limits<double>::infinity()),
+        m_max_y(-std::numeric_limits<double>::infinity())
     {
     }
 
-    std::vector<Line> compute(const std::vector<Point>& points);
-
-    // debug
-    std::vector<Line> lines;
+    void compute(const std::vector<Point>& points);
+    std::vector<Line> getLines();
 
     private:
     void processPoint(const Point& pt);
@@ -230,6 +260,10 @@ class VoronoiComputer
     BeachCompare m_beach_compare;
     BeachLineT m_beach;
     CircleQueue m_events;
+
+    double m_min_x, m_max_x, m_min_y, m_max_y;
+
+    std::vector<Boundary> m_bounds;
 };
 
 /**
@@ -240,7 +274,8 @@ class VoronoiComputer
 std::vector<Line> computeVoronoi(const std::vector<Point>& points)
 {
     VoronoiComputer computer;
-    return computer.compute(points);
+    computer.compute(points);
+    return computer.getLines();
 }
 
 Point getIntersection(float sweep_y, const Point& p, const Point& r, float sign)
@@ -355,10 +390,30 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
     m_beach.erase(event.int0);
     m_beach.erase(event.int1);
 
-    Line line0{*event.int0.pt0, *event.int0.pt1};
-    Line line1{*event.int1.pt0, *event.int1.pt1};
-    lines.push_back(line0);
-    lines.push_back(line1);
+//    Line line0{*event.int0.pt0, *event.int0.pt1};
+//    Line line1{*event.int1.pt0, *event.int1.pt1};
+//    lines.push_back(line0);
+//    lines.push_back(line1);
+//
+//    // finish off boundaries related to the middle point
+//    auto itb = m_bounds.find(left_int.pt0, left_int.pt1);
+//    assert(itb != m_bounds.end());
+//    itb->circle_pt = right_int.pt1;
+//
+//    itb = m_bounds.find(right_int.pt0, right_int.pt1);
+//    assert(itb != m_bounds.end());
+//    itb->circle_pt = left_int.pt0;
+
+    const Point* ptA =  left_int.pt0;
+    const Point* ptB =  left_int.pt1;
+    const Point* ptC =  right_int.pt1;
+
+    // The new center point connects to bisectors of each of the individual
+    // pairs of points, these are rays from the center of the event circle to
+    // each of the bisectors
+    m_bounds.emplace_back(Boundary{ptA, ptB, ptC});
+    m_bounds.emplace_back(Boundary{ptB, ptA, ptC});
+    m_bounds.emplace_back(Boundary{ptC, ptA, ptC});
 }
 
 void VoronoiComputer::processPoint(const Point& pt)
@@ -371,7 +426,7 @@ void VoronoiComputer::processPoint(const Point& pt)
 
     *m_beach_compare.sweep_y = pt.y;
 
-    // insert two new intersections
+    // insert two new intersections in between existing intersections
     Intersection dummy{&pt, &pt, -1};
     bool success;
     BeachLineT::iterator it1, it2, it_new;
@@ -423,18 +478,21 @@ void VoronoiComputer::processPoint(const Point& pt)
         // right intersections (since we got in the middle)
         if(it1->pt0 != nullptr && it2->pt1 != nullptr)
             m_events.erase(*it1, *it2);
-
-        //// TODO add dangling too
-        //voronoi.m_points.emplace_back();
-        //voronoi.m_points.back().x = 0.5*(ptB->x + pt.x);
-        //voronoi.m_points.back().y = 0.5*(ptB->y + pt.y);
     }
+
 
     std::cerr << "<......................" << std::endl;
 }
 
-std::vector<Line> VoronoiComputer::compute(const std::vector<Point>& points)
+void VoronoiComputer::compute(const std::vector<Point>& points)
 {
+    for(const auto& pt : points) {
+        m_min_x = std::min<double>(pt.x, m_min_x);
+        m_max_x = std::max<double>(pt.x, m_max_x);
+        m_min_y = std::min<double>(pt.y, m_min_y);
+        m_max_y = std::max<double>(pt.y, m_max_y);
+    }
+
     std::cerr << "Sorting points" << std::endl;
     // Sort by decreasing y
     std::vector<size_t> ordered(points.size());
@@ -480,7 +538,21 @@ std::vector<Line> VoronoiComputer::compute(const std::vector<Point>& points)
         }
     }
 
-    return lines;
     //return voronoi;
 }
 
+std::vector<Line> VoronoiComputer::getLines()
+{
+    std::vector<Line> out;
+    for(auto it = m_bounds.begin(); it != m_bounds.end(); ++it) {
+        // start point is a bisector
+        Point pt0{0.5 * (it->start_pt0->x + it->start_pt1->x),
+                  0.5 * (it->start_pt0->y + it->start_pt1->y)};
+
+        // was closed
+        auto c = solveCircle(*it->start_pt0, *it->start_pt1, *it->circle_pt);
+        Point pt1 = c.center;
+        out.emplace_back(Line{pt0, pt1});
+    }
+    return out;
+}
