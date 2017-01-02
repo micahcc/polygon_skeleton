@@ -410,8 +410,40 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
     // of the two intersections, that means we must remove all events related to
     // this point
 
+
+    // Suppose that intersections A and B meet (when the middle peak is beat out
+    // by the side peaks):
+    // l |   |     | r
+    //   \  A/ |   |
+    //    \ / v\B  /
+    //     v    \ /
+    //           v
+
+    // |     |
+    // |     |      |
+    // \    C/      |
+    //  \   / \     /
+    //   \ /   \   /
+    //    v     \ /
+    //           v
+    //
+    // First we will remove the intersections A and B from the beach line
+    //
+    // Now if there are other intersections to the left of A, there would be an
+    // event associated with A and that (l), same for an event to the right of
+    // B (r). Those events can no longer occur because the intersections A (of
+    // the left and center peak) and B (of the center and right peaks) will no
+    // longer exist when the center peak has been hidden. Therefore we must
+    // remove those events.
+    //
+    // We then have a new intersection on the beach line (C) which can have
+    // events with l and r (when they exist)
+
     // find intersections to the left and right on the beach line, so we can
     // create a new event for when they meet
+
+    bool success;
+    BeachLineT::iterator it_new;
     auto it = m_beach.find(event.left_int);
     std::cerr << "Left Int: [" << *(*it).pt0 << " -- " << *(*it).pt1 << std::endl;
     it--;
@@ -431,20 +463,25 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
     m_events.erase(new_left_int, event.left_int);
     m_events.erase(event.right_int, new_right_int);
 
-    std::cerr << "New Left/Right: " << new_left_int.pt0 << ", "
-        << new_left_int.pt1 << " -- " << new_right_int.pt0 << ", "
-        << new_right_int.pt1 << std::endl;
-    if(new_left_int.pt0 != nullptr && new_right_int.pt1 != nullptr) {
-        std::cerr << "Inserting event for: " << *new_left_int.pt0
-            << ", " << *new_left_int.pt1 << ", -- " << *new_right_int.pt0
-            << ", " << *new_right_int.pt1 << std::endl;
-        m_events.insert(new_left_int, new_right_int);
-    }
-
     // delete arc (i.e. erase both intersections related to it
     std::cerr << "Erasing from beach" << std::endl;
     m_beach.erase(event.left_int);
     m_beach.erase(event.right_int);
+
+    // TODO add intersection of previous peaks to beach line
+    throw -1; // the issue is that the radical sign is not very clear
+    std::tie(it_new, success) = m_beach.emplace(event.left_int.pt0,
+            event.right_int.pt1, -1);
+
+    std::cerr << "New Left/Right: " << new_left_int.pt0 << ", "
+        << new_left_int.pt1 << " -- " << new_right_int.pt0 << ", "
+        << new_right_int.pt1 << std::endl;
+    if(new_left_int.pt0 != nullptr) {
+        m_events.insert(new_left_int, *it_new);
+    }
+    if(new_right_int.pt1 != nullptr) {
+        m_events.insert(*it_new, new_right_int);
+    }
 
 //    Line line0{*event.left_int.pt0, *event.left_int.pt1};
 //    Line line1{*event.right_int.pt0, *event.right_int.pt1};
@@ -461,11 +498,13 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
 //    itb->circle_pt = new_left_int.pt0;
 
     const Point *ptA, *ptB, *ptC;
-    if(event.left_int.pt0 != event.right_int.pt0 && event.left_int.pt1 != event.right_int.pt0) {
+    if(event.left_int.pt0 != event.right_int.pt0 &&
+            event.left_int.pt1 != event.right_int.pt0) {
         ptA = event.left_int.pt0;
         ptB = event.left_int.pt1;
         ptC = event.right_int.pt0;
-    } else if(event.left_int.pt0 != event.right_int.pt1 && event.left_int.pt1 != event.right_int.pt1) {
+    } else if(event.left_int.pt0 != event.right_int.pt1 &&
+            event.left_int.pt1 != event.right_int.pt1) {
         ptA = event.left_int.pt0;
         ptB = event.left_int.pt1;
         ptC = event.right_int.pt1;
