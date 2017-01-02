@@ -147,8 +147,8 @@ struct BeachCompare
 
 struct CircleEvent
 {
-    Intersection int0;
-    Intersection int1;
+    Intersection left_int;
+    Intersection right_int;
     Circle circle;
 
     bool operator<(const CircleEvent& rhs) const
@@ -193,48 +193,46 @@ public:
         m_queue.erase(it);
     };
 
-    void insert(const Intersection& int0, const Intersection& int1)
+    void insert(const Intersection& left_int, const Intersection& right_int)
     {
         std::cerr << "<<<Inserting Event: ("
-            << int0.pt0 << ", " << int0.pt1 << ", " << int0.sign << ") and ("
-            << int1.pt0 << ", " << int1.pt1 << ", " << int1.sign << ")"
+            << left_int.pt0 << ", " << left_int.pt1 << ", " << left_int.sign << ") and ("
+            << right_int.pt0 << ", " << right_int.pt1 << ", " << right_int.sign << ")"
             << std::endl;
-        assert(int0.pt0);
-        assert(int0.pt1);
-        assert(int1.pt0);
-        assert(int1.pt1);
-        std::cerr << "<<<Left Point 0: " << *int0.pt0 << std::endl;
-        std::cerr << "<<<Left Point 1: " << *int0.pt1 << std::endl;
-        std::cerr << "<<<Right Point 0: " << *int1.pt0 << std::endl;
-        std::cerr << "<<<Right Point 1: " << *int1.pt1 << std::endl;
+        assert(left_int.pt0);
+        assert(left_int.pt1);
+        assert(right_int.pt0);
+        assert(right_int.pt1);
+        std::cerr << "<<<Left Point 0: " << *left_int.pt0 << std::endl;
+        std::cerr << "<<<Left Point 1: " << *left_int.pt1 << std::endl;
+        std::cerr << "<<<Right Point 0: " << *right_int.pt0 << std::endl;
+        std::cerr << "<<<Right Point 1: " << *right_int.pt1 << std::endl;
 
-        //assert(int0.pt1 == int1.pt0);
+        //assert(left_int.pt1 == right_int.pt0);
         const Point *ptA, *ptB, *ptC;
-        if(int0.pt0 != int1.pt0 && int0.pt1 != int1.pt0) {
-            ptA = int0.pt0;
-            ptB = int0.pt1;
-            ptC = int1.pt0;
-        } else if(int0.pt0 != int1.pt1 && int0.pt1 != int1.pt1) {
-            ptA = int0.pt0;
-            ptB = int0.pt1;
-            ptC = int1.pt1;
+        if(left_int.pt0 != right_int.pt0 && left_int.pt1 != right_int.pt0) {
+            ptA = left_int.pt0;
+            ptB = left_int.pt1;
+            ptC = right_int.pt0;
+        } else if(left_int.pt0 != right_int.pt1 && left_int.pt1 != right_int.pt1) {
+            ptA = left_int.pt0;
+            ptB = left_int.pt1;
+            ptC = right_int.pt1;
         } else {
             throw -8;
         }
 
         CircleEvent evt;
         evt.circle = solveCircle(*ptA, *ptB, *ptC);
-        evt.int0 = int0;
-        evt.int1 = int1;
+        evt.left_int = left_int;
+        evt.right_int = right_int;
         m_queue.insert(evt);
     }
 
     void erase(const Intersection& left_int, const Intersection& right_int)
     {
-        if(left_int.pt0 == nullptr)
-            return;
-        if(right_int.pt1 == nullptr)
-            return;
+        if(left_int.pt0 == nullptr) return;
+        if(right_int.pt1 == nullptr) return;
 
         std::cerr << "<<<Erasing Event: ("
             << left_int.pt0 << ", " << left_int.pt1 << ", " << left_int.sign << ") to ("
@@ -404,9 +402,9 @@ Circle solveCircle(const Point& p, const Point& q, const Point& r)
 // VoronoiComputer Implementation
 void VoronoiComputer::processEvent(const CircleEvent& event)
 {
-    std::cerr << "Processing Event for: [" << *event.int0.pt0 << " -- "
-        << *event.int0.pt1 << "], " << *event.int1.pt0 << " -- "
-        << *event.int1.pt1 << "]\n";
+    std::cerr << "Processing Event for: [" << *event.left_int.pt0 << " -- "
+        << *event.left_int.pt1 << "], " << *event.right_int.pt0 << " -- "
+        << *event.right_int.pt1 << "]\n";
 
     // This essentially locks in the results of a single point (the middle part
     // of the two intersections, that means we must remove all events related to
@@ -414,7 +412,7 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
 
     // find intersections to the left and right on the beach line, so we can
     // create a new event for when they meet
-    auto it = m_beach.find(event.int0);
+    auto it = m_beach.find(event.left_int);
     std::cerr << "Left Int: [" << *(*it).pt0 << " -- " << *(*it).pt1 << std::endl;
     it--;
     auto new_left_int = *it;
@@ -430,8 +428,8 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
     // the two intersections and their left and right neighbors. If the
     // intersections are dummy intersections (null point at one side, then don't
     // erase)
-    m_events.erase(new_left_int, event.int0);
-    m_events.erase(event.int1, new_right_int);
+    m_events.erase(new_left_int, event.left_int);
+    m_events.erase(event.right_int, new_right_int);
 
     std::cerr << "New Left/Right: " << new_left_int.pt0 << ", "
         << new_left_int.pt1 << " -- " << new_right_int.pt0 << ", "
@@ -445,11 +443,11 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
 
     // delete arc (i.e. erase both intersections related to it
     std::cerr << "Erasing from beach" << std::endl;
-    m_beach.erase(event.int0);
-    m_beach.erase(event.int1);
+    m_beach.erase(event.left_int);
+    m_beach.erase(event.right_int);
 
-//    Line line0{*event.int0.pt0, *event.int0.pt1};
-//    Line line1{*event.int1.pt0, *event.int1.pt1};
+//    Line line0{*event.left_int.pt0, *event.left_int.pt1};
+//    Line line1{*event.right_int.pt0, *event.right_int.pt1};
 //    lines.push_back(line0);
 //    lines.push_back(line1);
 //
@@ -463,14 +461,14 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
 //    itb->circle_pt = new_left_int.pt0;
 
     const Point *ptA, *ptB, *ptC;
-    if(event.int0.pt0 != event.int1.pt0 && event.int0.pt1 != event.int1.pt0) {
-        ptA = event.int0.pt0;
-        ptB = event.int0.pt1;
-        ptC = event.int1.pt0;
-    } else if(event.int0.pt0 != event.int1.pt1 && event.int0.pt1 != event.int1.pt1) {
-        ptA = event.int0.pt0;
-        ptB = event.int0.pt1;
-        ptC = event.int1.pt1;
+    if(event.left_int.pt0 != event.right_int.pt0 && event.left_int.pt1 != event.right_int.pt0) {
+        ptA = event.left_int.pt0;
+        ptB = event.left_int.pt1;
+        ptC = event.right_int.pt0;
+    } else if(event.left_int.pt0 != event.right_int.pt1 && event.left_int.pt1 != event.right_int.pt1) {
+        ptA = event.left_int.pt0;
+        ptB = event.left_int.pt1;
+        ptC = event.right_int.pt1;
     } else {
         throw -8;
     }
