@@ -13,8 +13,8 @@ typedef std::set<Intersection, BeachCompare> BeachLineT;
 // Helper Functions
 Circle solveCircle(const Point& p, const Point& q, const Point& r);
 Point getIntersection(float sweep_y, const Point& p, const Point& r, float sign);
-Point getIntersection(float sweep_y, const Point& p, const Point& r);
 Point getIntersection(float sweep_y, const Point& p, double x);
+float getSign(const Intersection& intersection);
 double sqr(double v);
 
 // Helper Structures
@@ -32,7 +32,6 @@ struct Intersection
 
     const Point* pt_left;
     const Point* pt_right;
-    float sign;  // add or subtract the radical?
 };
 
 
@@ -69,10 +68,11 @@ struct BeachCompare
     {
         // Compares the x index of thwo intersections. In the case where a point
         // is missing (nullptr), there is no intersection (or intersection is at
-        // positive or negative infinity (depending on sign)
+        // positive or negative infinity, if right or left point is nullptr,
+        // respectively)
         std::cerr << "<<<Comparing: ("
-            << lhs.pt_left << ", " << lhs.pt_right << ", " << lhs.sign << ") to ("
-            << rhs.pt_left << ", " << rhs.pt_right << ", " << rhs.sign << ")" << std::endl;
+            << lhs.pt_left << ", " << lhs.pt_right << ", " << ") to ("
+            << rhs.pt_left << ", " << rhs.pt_right << ", " << ")" << std::endl;
         if(lhs.pt_left)
             std::cerr << "<<<Left Point 0: " << *lhs.pt_left << std::endl;
         if(lhs.pt_right)
@@ -82,43 +82,63 @@ struct BeachCompare
         if(rhs.pt_right)
             std::cerr << "<<<Right Point 1: " << *rhs.pt_right << std::endl;
         std::cerr << "<<<Using sweep = " << *sweep_y << std::endl;
-        bool left_infinite = (lhs.pt_left == nullptr || lhs.pt_right == nullptr);
-        bool right_infinite = (rhs.pt_left == nullptr || rhs.pt_right == nullptr);
-        assert(!left_infinite || !right_infinite);
-        if(left_infinite) {
+        bool lhs_n_infinite = lhs.pt_left == nullptr;
+        bool lhs_p_infinite = lhs.pt_right == nullptr;
+        bool rhs_n_infinite = rhs.pt_left == nullptr;
+        bool rhs_p_infinite = rhs.pt_right == nullptr;
+
+        bool result;
+        if((lhs_p_infinite && rhs_n_infinite) ||
+                (lhs_p_infinite && rhs_p_infinite) ||
+                (lhs_n_infinite && rhs_n_infinite)) {
+            result = false;
+        } else if(lhs_n_infinite || rhs_p_infinite) {
             // -infinity < rhs => true
-            std::cerr << "<<<" << true << std::endl;
-            return true;
-        } else if(right_infinite) {
+            result = true;
+        } else if(lhs_p_infinite || rhs_n_infinite) {
             // lhs < -infinity => false
-            std::cerr << "<<<" << false << std::endl;
-            return false;
-        } else if((lhs.pt_left == rhs.pt_left && lhs.pt_right == rhs.pt_right) ||
-                (lhs.pt_right == rhs.pt_left && lhs.pt_left == rhs.pt_right)) {
-            // Special case, two intersections of the same two parabolas
-            std::cerr << "parabolas are identical!" << std::endl;
-            throw -1;
+            result = false;
+        } else if(lhs.pt_left == rhs.pt_left && lhs.pt_right == rhs.pt_right) {
+            // intersection of the exact same to parabolas, by definition this
+            // equal and therefore not less
+            result = false;
+        } else if(lhs.pt_right == rhs.pt_left && lhs.pt_left == rhs.pt_right) {
+            // the order of the parabolas determines the sign. So the same two
+            // parabolas does not mean the same intersection.
+            result = getSign(lhs) < getSign(rhs);
         } else if(lhs.pt_left == lhs.pt_right) {
             // Special case, intersection of two identical points is assumed to
             // be just the x value of the double-point intersection
             assert(rhs.pt_left != rhs.pt_right);
-            Point right = getIntersection(*sweep_y, *rhs.pt_left, *rhs.pt_right);
-            return lhs.pt_left->x < right.x;
+            assert(!(lhs_n_infinite || lhs_p_infinite || rhs_n_infinite ||
+                        rhs_p_infinite));
+            Point right = getIntersection(*sweep_y, *rhs.pt_left, *rhs.pt_right,
+                    getSign(rhs));
+            result = lhs.pt_left->x < right.x;
         } else if(rhs.pt_left == rhs.pt_right) {
             // Special case, intersection of two identical points is assumed to
             // be just the x value of the double-point intersection
             assert(lhs.pt_left != lhs.pt_right);
-            Point left  = getIntersection(*sweep_y, *lhs.pt_left, *lhs.pt_right);
-            return left.x < rhs.pt_left->x;
+            assert(!(lhs_n_infinite || lhs_p_infinite || rhs_n_infinite ||
+                        rhs_p_infinite));
+            Point left  = getIntersection(*sweep_y, *lhs.pt_left, *lhs.pt_right,
+                    getSign(lhs));
+            result = left.x < rhs.pt_left->x;
         } else {
             // get intersection of left two parabolas, and compare x with
             // intersection of right two
+            assert(!(lhs_n_infinite || lhs_p_infinite || rhs_n_infinite || rhs_p_infinite));
             std::cerr << "<<<Computing intersections" << std::endl;
-            Point right = getIntersection(*sweep_y, *rhs.pt_left, *rhs.pt_right);
-            Point left  = getIntersection(*sweep_y, *lhs.pt_left, *lhs.pt_right);
+            Point right = getIntersection(*sweep_y, *rhs.pt_left, *rhs.pt_right,
+                    getSign(rhs));
+            Point left  = getIntersection(*sweep_y, *lhs.pt_left, *lhs.pt_right,
+                    getSign(lhs));
             std::cerr << "<<<" << (left.x < right.x) << std::endl;
-            return left.x < right.x;
+            result = left.x < right.x;
         }
+
+        std::cerr << "<<<" << result << std::endl;
+        return result;
     }
 };
 
@@ -174,8 +194,8 @@ public:
     void insert(const Intersection& left_int, const Intersection& right_int)
     {
         std::cerr << "<<<Inserting Event: ("
-            << left_int.pt_left << ", " << left_int.pt_right << ", " << left_int.sign << ") and ("
-            << right_int.pt_left << ", " << right_int.pt_right << ", " << right_int.sign << ")"
+            << left_int.pt_left << ", " << left_int.pt_right << ") and ("
+            << right_int.pt_left << ", " << right_int.pt_right << ")"
             << std::endl;
         assert(left_int.pt_left);
         assert(left_int.pt_right);
@@ -213,8 +233,8 @@ public:
         if(right_int.pt_right == nullptr) return;
 
         std::cerr << "<<<Erasing Event: ("
-            << left_int.pt_left << ", " << left_int.pt_right << ", " << left_int.sign << ") to ("
-            << right_int.pt_left << ", " << right_int.pt_right << ", " << right_int.sign << ")"
+            << left_int.pt_left << ", " << left_int.pt_right << ") to ("
+            << right_int.pt_left << ", " << right_int.pt_right << ")"
             << std::endl;
 
         assert(left_int.pt_left);
@@ -289,41 +309,78 @@ std::vector<Line> computeVoronoi(const std::vector<Point>& points)
  *  Note: order is important
  *
  *  When a parabola is initially inserted, it is essentially a line:
+ *
  *  \  A  /
- *   \   /
+ *   *   /
  *   |\ /
  *   | v
  *   |
  * --B---------
  *
  *  \  A  /
- *   \   /
+ *   \   *
  *    \ /|
  *     v |
  *       |
  * ------B------
  *
- * The beach line then has intersections: A:B, B:A. where the sign of
- * the radical is -1 for A:B and +1 for B:A. In other words, the sign of the
- * radical determines the side of B that we are on
+ *  then expands to a parabola
+ *
+ *  *  A  /
+ *  |\   /
+ *  | * /
+ *  \ /v
+ *   v
+ * --B---------
+ *
+ *  \  A  *
+ *   \   //
+ *    \ * |
+ *     v| |
+ *       v
+ * ------B------
+ *
+ * The beach line is made up of segments on the frontier of these two (and
+ * other) parabolas. We define the beach line by storing the series of
+ * intersections:
+ *
+ * -inf:A, A:B, B:A, A:inf
+ *
+ * where inf means there is no intersection and the beach line continues forever
+ * along the curve. intersections are shown with *'s in the figures.
+ *
+ * The possible intersections defined by left_parab and right_parab are:
+ * A:B, B:A. where the sign of the radical for parabola B is -1 for A:B and +1
+ * for B:A. In other words, the sign of the radical determines the side of B
+ * that we are on
  *
  * @param sweep_y Position of sweep line
- * @param left parab
- * @param right_parab
+ * @param left parab Beach line parabola that on the left side of the
+ * intersection. NOTE that this is different from the x-coordinate of the focal
+ * points. Left parab could have a focal point x > OR < than the focal point of
+ * right parab.
+ * @param right_parab Becah line parabola that is on the right side of the
+ * intersection. NOTE that this is different from the x-coordinate of the focal
+ * points. Left parab could have a focal point x > OR < than the focal point of
+ * right parab.
+
  */
-Point getIntersection(float sweep_y, const Point& left_parab,
-        const Point& right_parab)
+float getSign(const Intersection& intersection)
 {
+    assert(intersection.pt_left && intersection.pt_right);
+
+    const Point& left_parab = *intersection.pt_left;
+    const Point& right_parab = *intersection.pt_right;
     if(left_parab.y <= right_parab.y) {
         // A = right_parab
         // B = left_parab
         // Transitioning form B to A (B:A)
-        return getIntersection(sweep_y, left_parab, right_parab, +1);
+        return 1;
     } else {
         // A = left_parab
         // B = right_parab
         // Transitioning from A to B (A:B)
-        return getIntersection(sweep_y, left_parab, right_parab, -1);
+        return -1;
     }
 }
 
@@ -579,8 +636,8 @@ void VoronoiComputer::processPoint(const Point& pt)
         // intersection >= so take the first point
         std::cerr << "<<Finding beach location" << std::endl;
         it1 = m_beach.lower_bound(dummy);
-        std::cerr << "<<Lower bound: (" << it1->pt_left << " -- " << it1->pt_right <<
-            ", " << it1->sign << ")" << std::endl;
+        std::cerr << "<<Lower bound: (" << it1->pt_left << " -- "
+            << it1->pt_right << ")" << std::endl;
         if(it1->pt_left) {
             std::cerr << "<<pt_left: " << *it1->pt_left << std::endl;
         }
@@ -672,8 +729,8 @@ void VoronoiComputer::compute(const std::vector<Point>& points)
 
         std::cerr << "Final Beach: " << std::endl;
         for(const auto& inter: m_beach) {
-            std::cerr << "(" << inter.pt_left << ", " << inter.pt_right << ", "
-                << inter.sign << ")" << std::endl;
+            std::cerr << "(" << inter.pt_left << ", " << inter.pt_right << ")"
+                << std::endl;
             if(inter.pt_left) std::cerr << "Point 0: " << *inter.pt_left << std::endl;
             if(inter.pt_right) std::cerr << "Point 1: " << *inter.pt_right << std::endl;
         }
