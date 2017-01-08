@@ -35,7 +35,7 @@ int main()
         doc << svg::Line(
                 svg::Point(pt0.x, pt0.y),
                 svg::Point(pt1.x, pt1.y),
-                svg::Stroke(.1, svg::Color::Black));
+                svg::Stroke(2, svg::Color::Black));
     }
 
     doc.save();

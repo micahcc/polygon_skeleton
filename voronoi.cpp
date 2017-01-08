@@ -874,10 +874,8 @@ Voronoi::Voronoi(const std::vector<Point>& points)
             // Edges and neighbors can only be added once we have the new edge
             new_node->n_edges = 0;
             new_node->n_neighbors = 0;
-        } else {
-            // node already exists, just get the pointer
-            circle_node = circle_result.first->second;
         }
+        circle_node = circle_result.first->second;
 
         // Create / get bisector node
         auto bisect_result = bisect_nodes.emplace(make_tuple(ptA, ptB), nullptr);
@@ -899,10 +897,8 @@ Voronoi::Voronoi(const std::vector<Point>& points)
             // Edges and neighbors can only be added once we have the new edge
             new_node->n_edges = 0;
             new_node->n_neighbors = 0;
-        } else {
-            // node already exists, just get the pointer
-            bisect_node = bisect_result.first->second;
         }
+        bisect_node = bisect_result.first->second;
 
         // Make nodes neighbors
         bisect_node->neighbors[bisect_node->n_neighbors++] = circle_node;
