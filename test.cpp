@@ -13,7 +13,7 @@ int main()
         {500, 100},
     };
 
-    auto lines = computeVoronoi(points);
+    Voronoi graph(points);
     //auto vpoints = result.getPoints();
 
     //result.getLines();
@@ -27,12 +27,14 @@ int main()
 
     // Condensed notation, parenthesis isolate temporaries that are inserted into parents.
     //doc << svg::LineChart(svg::Dimensions(1000, 1000));
-    for(const auto& line: lines) {
-        std::cerr << "(" << line.pt0.x << ", " << line.pt0.y << ")"
-            << " -- (" << line.pt1.x << ", " << line.pt1.y << ")" << std::endl;
+    for(const auto& edge: graph.getEdges()) {
+        const auto& pt0 = *edge->nodes[0];
+        const auto& pt1 = *edge->nodes[1];
+        std::cerr << "(" << pt0.x << ", " << pt0.y << ")"
+            << " -- (" << pt1.x << ", " << pt1.y << ")" << std::endl;
         doc << svg::Line(
-                svg::Point(line.pt0.x, line.pt0.y),
-                svg::Point(line.pt1.x, line.pt1.y),
+                svg::Point(pt0.x, pt0.y),
+                svg::Point(pt1.x, pt1.y),
                 svg::Stroke(.1, svg::Color::Black));
     }
 

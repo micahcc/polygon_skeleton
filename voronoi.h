@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <tuple>
 #include <vector>
+#include <memory>
 #include <iostream>
 
 #include "geometry.h"
@@ -19,43 +20,18 @@ public:
     typedef std::shared_ptr<Voronoi> Ptr;
     typedef std::shared_ptr<const Voronoi> ConstPtr;
 
-
-    Voronoi(const std::vector<Point>& points);
-
-    std::vector<tuple<Point, Point>> getLines()
-    {
-        std::vector<tuple<Point, Point>> out;
-        for(const auto& segment : m_edges) {
-            tuple<Point, Point> tmp{
-                m_points[std::get<0>(segment)],
-                m_points[std::get<1>(segment)],
-            };
-            out.push_back(tmp);
-        }
-
-        return out;
-    }
-
-    const std::vector<Edge> getEdges() const
-    {
-        return m_edges;
-    }
-
-    const std::vector<Node> getNodes() const
-    {
-        return m_nodes;
-    }
+    struct Node;
 
     struct Edge
     {
         typedef std::shared_ptr<Edge> Ptr;
+        static constexpr size_t n_parents = 2;
 
-        constexpr size_t n_parents = 2;
         uint8_t n_neighbors;
 
-        size_t parents[2];   // original points that this edge separates
-        Node::Ptr nodes[2];      // endpoints for the edge
-        Edge::Ptr neighbors[6];  // other edges adjacent to this one
+        size_t parents[n_parents]; // original points that this edge separates
+        std::shared_ptr<Node> nodes[2];      // endpoints for the edge
+        std::shared_ptr<Edge> neighbors[6];  // other edges adjacent to this one
     };
 
     struct Node
@@ -67,17 +43,30 @@ public:
         uint8_t n_neighbors; // # other nodes connected to this by an edge 2 or 3
 
         size_t parents[3];  // original points that this node separates (2 or 3)
-        Edge::Ptr edges[3];     // edges attached to this node
-        Node::Ptr neighbors[3]; // other nodes attached to this one by an edge
+        std::shared_ptr<Edge> edges[3];     // edges attached to this node
+        std::shared_ptr<Node> neighbors[3]; // other nodes attached to this one
+                                            // by an edge
         float x, y;         // position
     };
+
+    Voronoi(const std::vector<Point>& points);
+
+    const std::vector<Edge::Ptr> getEdges() const
+    {
+        return m_edges;
+    }
+
+    const std::vector<Node::Ptr> getNodes() const
+    {
+        return m_nodes;
+    }
 
 private:
 
     class Implementation;
 
-    std::vector<Edge> m_edges;
-    std::vector<Nodes> m_nodes;
+    std::vector<Edge::Ptr> m_edges;
+    std::vector<Node::Ptr> m_nodes;
 
 };
 

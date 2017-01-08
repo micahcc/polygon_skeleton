@@ -1,7 +1,9 @@
 #include "voronoi.h"
 
+#include <unordered_map>
 #include <cmath>
 
+#include "std_ext.h"
 #include "geometry.h"
 
 // Types
@@ -311,6 +313,8 @@ class Voronoi::Implementation
     double m_min_x, m_max_x, m_min_y, m_max_y;
 
     std::vector<Boundary> m_bounds;
+
+	friend Voronoi;
 };
 
 /**
@@ -552,7 +556,7 @@ Circle solveCircle(const Point& p, const Point& q, const Point& r)
 };
 
 // Voronoi::implementation Implementation
-void Voronoi::implementation::processEvent(const CircleEvent& event)
+void Voronoi::Implementation::processEvent(const CircleEvent& event)
 {
     std::cerr << "--------\nProcessing Event at "
         << (event.circle.center.y - event.circle.radius)
@@ -691,7 +695,7 @@ void Voronoi::implementation::processEvent(const CircleEvent& event)
     m_bounds.emplace_back(Boundary{ptC, ptA, ptB});
 }
 
-void Voronoi::implementation::processPoint(const Point& pt)
+void Voronoi::Implementation::processPoint(const Point& pt)
 {
     std::cerr << "<----------------------" << std::endl;
     std::cerr << "<Processing point: " << pt << std::endl;
@@ -767,7 +771,7 @@ void Voronoi::implementation::processPoint(const Point& pt)
     std::cerr << "<......................" << std::endl;
 }
 
-void Voronoi::implementation::compute(const std::vector<Point>& points)
+void Voronoi::Implementation::compute(const std::vector<Point>& points)
 {
     for(const auto& pt : points) {
         m_min_x = std::min<double>(pt.x, m_min_x);
@@ -830,48 +834,30 @@ void Voronoi::implementation::compute(const std::vector<Point>& points)
     //return voronoi;
 }
 
-std::vector<Line> Voronoi::getLines()
-{
-    std::vector<Line> out;
-    for(auto it = m_bounds.begin(); it != m_bounds.end(); ++it) {
-        // start point is a bisector
-        Point pt_left{0.5 * (it->start_pt_left->x + it->start_pt_right->x),
-                  0.5 * (it->start_pt_left->y + it->start_pt_right->y)};
-
-        // was closed
-        auto c = solveCircle(*it->start_pt_left, *it->start_pt_right, *it->circle_pt);
-        Point pt_right = c.center;
-
-        std::cerr << "Line: (" << pt_left.x << ", " << pt_left.y << ") "
-             << "(" << pt_right.x << ", " << pt_right.y << ")" << std::endl;
-        out.emplace_back(Line{pt_left, pt_right});
-    }
-    return out;
-}
-
 Voronoi::Voronoi(const std::vector<Point>& points)
 {
     using std::unordered_map;
     using std::tuple;
     using std::make_tuple;
 
-    Implementation impl(points);
+    Implementation impl;
+    impl.compute(points);
 
-    unordered_map<tuple<const Point*, const Point*, const Point*>, Node*> circle_nodes;
-    unordered_map<tuple<const Point*, const Point*>, Node*> bisect_nodes;;
+    unordered_map<tuple<const Point*, const Point*, const Point*>, Node::Ptr> circle_nodes;
+    unordered_map<tuple<const Point*, const Point*>, Node::Ptr> bisect_nodes;;
     for(const auto& bound: impl.m_bounds) {
         // bound connects the firs 2 points to the circle point with the 3rd
-        Node::Ptr circle_node, *bisect_node;
+        Node::Ptr circle_node, bisect_node;
         const Point* ptA = std::min(bound.start_pt_left, bound.start_pt_right);
-        const Point* ptB = std::max(bound.start_pt_left, bound.start_pt_right;
+        const Point* ptB = std::max(bound.start_pt_left, bound.start_pt_right);
         const Point* ptC = bound.circle_pt;
 
         // Create / get circle node
-        auto circle_result = circle_points.insert(make_tuple(ptA, ptB, ptC), nullptr);
+        auto circle_result = circle_nodes.emplace(make_tuple(ptA, ptB, ptC), nullptr);
         if(circle_result.second) {
             // need to construct a new node and add its parents and location
             auto new_node = std::make_shared<Node>();
-            circle_result.first.second = new_node;
+            circle_result.first->second = new_node;
             m_nodes.push_back(new_node);
 
             // Add parents
@@ -881,7 +867,7 @@ Voronoi::Voronoi(const std::vector<Point>& points)
             new_node->parents[2] = (ptC - points.data()) / sizeof(Point);
 
             // Add position
-            auto circle = solveCircle(ptA, ptB, ptC);
+            auto circle = solveCircle(*ptA, *ptB, *ptC);
             new_node->x = circle.center.x;
             new_node->y = circle.center.y;
 
@@ -890,15 +876,15 @@ Voronoi::Voronoi(const std::vector<Point>& points)
             new_node->n_neighbors = 0;
         } else {
             // node already exists, just get the pointer
-            circle_node = circle_result.first.second;
+            circle_node = circle_result.first->second;
         }
 
         // Create / get bisector node
-        auto bisect_result = bisect_nodes.insert(make_tuple(ptA, ptB), nullptr);
+        auto bisect_result = bisect_nodes.emplace(make_tuple(ptA, ptB), nullptr);
         if(bisect_result.second) {
             // need to construct a new node and add its parents and location
             auto new_node = std::make_shared<Node>();
-            bisect_result.first.second = new_node;
+            bisect_result.first->second = new_node;
             m_nodes.push_back(new_node);
 
             // Add parents
@@ -915,7 +901,7 @@ Voronoi::Voronoi(const std::vector<Point>& points)
             new_node->n_neighbors = 0;
         } else {
             // node already exists, just get the pointer
-            bisect_node = bisect_result.first.second;
+            bisect_node = bisect_result.first->second;
         }
 
         // Make nodes neighbors
@@ -928,7 +914,6 @@ Voronoi::Voronoi(const std::vector<Point>& points)
         edge->n_neighbors = 0;
 
         // Add edge's parents
-        edge->n_parents = 2;
         edge->parents[0] = (ptA - points.data()) / sizeof(Point);
         edge->parents[1] = (ptB - points.data()) / sizeof(Point);
 
@@ -943,16 +928,15 @@ Voronoi::Voronoi(const std::vector<Point>& points)
 
     // add edge's neighbors by copying the neighbors of
     for(Edge::Ptr edge : m_edges) {
-        for(auto ii = 0; ii < edge->nodes[0]->n_neighbors; ii++) {
-            Edge::Ptr neighbor = edge->nodes[0]->neighbors[ii];
+        for(auto ii = 0; ii < edge->nodes[0]->n_edges; ii++) {
+            Edge::Ptr neighbor = edge->nodes[0]->edges[ii];
             if(neighbor != edge)
                 edge->neighbors[edge->n_neighbors++] = neighbor;
         }
-        for(auto ii = 0; ii < edge->nodes[1]->n_neighbors; ii++) {
-            Edge::Ptr neighbor = edge->nodes[1]->neighbors[ii];
+        for(auto ii = 0; ii < edge->nodes[1]->n_edges; ii++) {
+            Edge::Ptr neighbor = edge->nodes[1]->edges[ii];
             if(neighbor != edge)
                 edge->neighbors[edge->n_neighbors++] = neighbor;
         }
     }
-}
 }
