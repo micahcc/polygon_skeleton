@@ -17,6 +17,17 @@ Point getIntersection(float sweep_y, const Point& p, double x);
 float getSign(const Intersection& intersection);
 double sqr(double v);
 
+/**
+ * Something that comes up several times: which 3 of 4 points are unique
+ * (assuming one reduntant pair
+ */
+std::tuple<const Point*, const Point*, const Point*> unique_points(
+        const Point* pt0, const Point* pt1, const Point* pt2, const Point* pt3);
+
+std::tuple<const Point*, const Point*, const Point*> unique_points(
+        const Intersection& int0, const Intersection& int1);
+
+
 // Helper Structures
 struct Circle
 {
@@ -91,6 +102,10 @@ struct BeachCompare
         if((lhs_p_infinite && rhs_n_infinite) ||
                 (lhs_p_infinite && rhs_p_infinite) ||
                 (lhs_n_infinite && rhs_n_infinite)) {
+            // Obviously +infinity !< -infinity and
+            // if both inputs have an infinite side in the same direction, then
+            // both intersections are dummy boundaries and therefore one can't
+            // be less than the other
             result = false;
         } else if(lhs_n_infinite || rhs_p_infinite) {
             // -infinity < rhs => true
@@ -129,10 +144,10 @@ struct BeachCompare
             // intersection of right two
             assert(!(lhs_n_infinite || lhs_p_infinite || rhs_n_infinite || rhs_p_infinite));
             std::cerr << "<<<Computing intersections" << std::endl;
-            Point right = getIntersection(*sweep_y, *rhs.pt_left, *rhs.pt_right,
-                    getSign(rhs));
             Point left  = getIntersection(*sweep_y, *lhs.pt_left, *lhs.pt_right,
                     getSign(lhs));
+            Point right = getIntersection(*sweep_y, *rhs.pt_left, *rhs.pt_right,
+                    getSign(rhs));
             std::cerr << "<<<" << (left.x < right.x) << std::endl;
             result = left.x < right.x;
         }
@@ -165,6 +180,11 @@ public:
         return m_queue.empty();
     }
 
+    size_t size() const
+    {
+        return m_queue.size();
+    }
+
     const CircleEvent& front() const
     {
         auto it = m_queue.begin();
@@ -193,6 +213,16 @@ public:
 
     void insert(const Intersection& left_int, const Intersection& right_int)
     {
+        if(left_int.pt_left == nullptr) return;
+        if(right_int.pt_right == nullptr) return;
+        if((left_int.pt_left == right_int.pt_left &&
+                left_int.pt_right == right_int.pt_right) ||
+                (left_int.pt_left == right_int.pt_right &&
+                left_int.pt_right == right_int.pt_left)) {
+            // if there are only 2 unique points, there should be no event
+            return;
+        }
+
         std::cerr << "<<<Inserting Event: ("
             << left_int.pt_left << ", " << left_int.pt_right << ") and ("
             << right_int.pt_left << ", " << right_int.pt_right << ")"
@@ -208,17 +238,8 @@ public:
 
         //assert(left_int.pt_right == right_int.pt_left);
         const Point *ptA, *ptB, *ptC;
-        if(left_int.pt_left != right_int.pt_left && left_int.pt_right != right_int.pt_left) {
-            ptA = left_int.pt_left;
-            ptB = left_int.pt_right;
-            ptC = right_int.pt_left;
-        } else if(left_int.pt_left != right_int.pt_right && left_int.pt_right != right_int.pt_right) {
-            ptA = left_int.pt_left;
-            ptB = left_int.pt_right;
-            ptC = right_int.pt_right;
-        } else {
-            throw -8;
-        }
+        std::tie(ptA, ptB, ptC) = unique_points(left_int.pt_left,
+                left_int.pt_right, right_int.pt_left, right_int.pt_right);
 
         CircleEvent evt;
         evt.circle = solveCircle(*ptA, *ptB, *ptC);
@@ -227,31 +248,34 @@ public:
         m_queue.insert(evt);
     }
 
-    void erase(const Intersection& left_int, const Intersection& right_int)
+    void erase(const Point* ptA, const Point* ptB, const Point* ptC)
     {
-        if(left_int.pt_left == nullptr) return;
-        if(right_int.pt_right == nullptr) return;
+        CircleEvent dummy;
+        dummy.circle = solveCircle(*ptA, *ptB, *ptC);
+        float end_y = dummy.circle.center.y - dummy.circle.radius;
+        auto it = m_queue.lower_bound(dummy);
+        while(it != m_queue.end() &&
+                !(it->circle.center.y - it->circle.radius < end_y)) {
 
-        std::cerr << "<<<Erasing Event: ("
-            << left_int.pt_left << ", " << left_int.pt_right << ") to ("
-            << right_int.pt_left << ", " << right_int.pt_right << ")"
-            << std::endl;
+            int point_matches = 0;
+            if(ptA == it->left_int.pt_left || ptA == it->left_int.pt_right ||
+                    ptA == it->right_int.pt_left || ptA == it->right_int.pt_right)
+                point_matches++;
 
-        assert(left_int.pt_left);
-        assert(left_int.pt_right);
-        assert(right_int.pt_left);
-        assert(right_int.pt_right);
+            if(ptB == it->left_int.pt_left || ptB == it->left_int.pt_right ||
+                    ptB == it->right_int.pt_left || ptB == it->right_int.pt_right)
+                point_matches++;
 
-        std::cerr << "<<<Left Point 0: " << *left_int.pt_left << std::endl;
-        std::cerr << "<<<Left Point 1: " << *left_int.pt_right << std::endl;
-        std::cerr << "<<<Right Point 0: " << *right_int.pt_left << std::endl;
-        std::cerr << "<<<Right Point 1: " << *right_int.pt_right << std::endl;
+            if(ptC == it->left_int.pt_left || ptC == it->left_int.pt_right ||
+                    ptC == it->right_int.pt_left || ptC == it->right_int.pt_right)
+                point_matches++;
 
-        assert(left_int.pt_right == right_int.pt_left);
-        Circle circle = solveCircle(*left_int.pt_left, *left_int.pt_right, *right_int.pt_right);
-        float end = circle.center.y - circle.radius;
-        CircleEvent tmp{left_int, right_int, circle};
-        m_queue.erase(tmp);
+            if(point_matches == 3)
+                it = m_queue.erase(it);
+            else
+                it++;
+        }
+
     }
 
 
@@ -300,6 +324,62 @@ std::vector<Line> computeVoronoi(const std::vector<Point>& points)
     VoronoiComputer computer;
     computer.compute(points);
     return computer.getLines();
+}
+
+/**
+ * Something that comes up several times: which 3 of 4 points are unique
+ * (assuming one reduntant pair
+ */
+std::tuple<const Point*, const Point*, const Point*> unique_points(
+        const Point* pt0, const Point* pt1, const Point* pt2, const Point* pt3)
+{
+    const Point *ptA, *ptB, *ptC;
+    if(pt0 == pt1) { // pt1 is redundant
+        ptA = pt0;
+        ptB = pt2;
+        ptC = pt3;
+    } else if(pt2 == pt0 || pt2 == pt1) { // pt2 is redundant
+        ptA = pt0;
+        ptB = pt1;
+        ptC = pt3;
+    } else if(pt3 == pt0 || pt3 == pt1 || pt3 == pt2) { // pt3 is redundant
+        ptA = pt0;
+        ptB = pt1;
+        ptC = pt2;
+    } else {
+        throw -8;
+    }
+
+    return std::make_tuple(ptA, ptB, ptC);
+}
+
+std::tuple<const Point*, const Point*, const Point*> unique_points(
+        const Intersection& int0, const Intersection& int1)
+{
+    return unique_points(int0.pt_left, int0.pt_right, int1.pt_left, int1.pt_right);
+}
+
+bool points_match(std::tuple<const Point*, const Point*, const Point*> lhs,
+        std::tuple<const Point*, const Point*, const Point*> rhs)
+{
+    return (std::get<0>(lhs) == std::get<0>(rhs) &&
+            std::get<1>(lhs) == std::get<1>(rhs) &&
+            std::get<2>(lhs) == std::get<2>(rhs)) ||
+           (std::get<0>(lhs) == std::get<0>(rhs) &&
+            std::get<1>(lhs) == std::get<2>(rhs) &&
+            std::get<2>(lhs) == std::get<1>(rhs)) ||
+           (std::get<0>(lhs) == std::get<1>(rhs) &&
+            std::get<1>(lhs) == std::get<2>(rhs) &&
+            std::get<2>(lhs) == std::get<0>(rhs)) ||
+           (std::get<0>(lhs) == std::get<1>(rhs) &&
+            std::get<1>(lhs) == std::get<0>(rhs) &&
+            std::get<2>(lhs) == std::get<2>(rhs)) ||
+           (std::get<0>(lhs) == std::get<2>(rhs) &&
+            std::get<1>(lhs) == std::get<0>(rhs) &&
+            std::get<2>(lhs) == std::get<1>(rhs)) ||
+           (std::get<0>(lhs) == std::get<2>(rhs) &&
+            std::get<1>(lhs) == std::get<1>(rhs) &&
+            std::get<2>(lhs) == std::get<0>(rhs));
 }
 
 /**
@@ -440,13 +520,13 @@ Point getIntersection(float sweep_y, const Point& p, const Point& r, float sign)
 
         assert(!std::isnan(term1));
         assert(!std::isnan(rad));
-        q.x = term1 + sign*rad;
+        q.x = term1 + sign*std::abs(rad);
 
         // use one of the parabolas to find y
         q.y = 0.5*(p.x*p.x + p.y*p.y - 2*p.x*q.x + q.x*q.x - y_s*y_s)/(p.y - y_s);
     }
 
-    std::cerr << "Solution: " << q << std::endl;
+    std::cerr << "<<<<Solution: " << q << std::endl;
     std::cerr << "<<<<Sweep line distance0: " << (q.y - sweep_y) << "\n"
         << "<<<<Solution distance0: "
         << std::sqrt( sqr(p.x - q.x ) + sqr( p.y - q.y )) << std::endl;
@@ -483,7 +563,9 @@ Circle solveCircle(const Point& p, const Point& q, const Point& r)
 // VoronoiComputer Implementation
 void VoronoiComputer::processEvent(const CircleEvent& event)
 {
-    std::cerr << "Processing Event for: [" << *event.left_int.pt_left << " -- "
+    std::cerr << "--------\nProcessing Event at "
+        << (event.circle.center.y - event.circle.radius)
+        << " for: [" << *event.left_int.pt_left << " -- "
         << *event.left_int.pt_right << "], " << *event.right_int.pt_left << " -- "
         << *event.right_int.pt_right << "]\n";
 
@@ -525,43 +607,74 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
 
     bool success;
     BeachLineT::iterator it_new;
+    std::cerr << "Looking up event location" << std::endl;
     auto it = m_beach.find(event.left_int);
+    assert(it != m_beach.begin());
+    assert(it != m_beach.end());
+
     std::cerr << "Left Int: [" << *(*it).pt_left << " -- " << *(*it).pt_right << std::endl;
     it--;
-    auto new_left_int = *it;
+    auto left_neighbor = *it;
     it++;
+    auto left_it = it;
     it++;
+    auto right_it = it;
     std::cerr << "Right Int: [" << *(*it).pt_left << " -- " << *(*it).pt_right << std::endl;
     it++;
-    auto new_right_int = *it;
+    auto right_neighbor = *it;
 
-    // We need to remove events involing either of the original
+    // Find the 3 unique points so that we can create the necessary boundary
+    // lines
+    const Point* ptA, *ptB, *ptC;
+    std::tie(ptA, ptB, ptC) = unique_points(event.left_int.pt_left,
+            event.left_int.pt_right, event.right_int.pt_left,
+            event.right_int.pt_right);
+
+    // We need to remove any other events involing this triplet of points either of the original
     // intersections, since this intersection is destroyed when it meets another
     // intersection (at a circle point). The events affected are the meeting of
     // the two intersections and their left and right neighbors. If the
     // intersections are dummy intersections (null point at one side, then don't
     // erase)
-    m_events.erase(new_left_int, event.left_int);
-    m_events.erase(event.right_int, new_right_int);
+    m_events.erase(ptA, ptB, ptC);
 
-    // delete arc (i.e. erase both intersections related to it
+    // delete arc (i.e. erase both intersections related to the current event)
     std::cerr << "Erasing from beach" << std::endl;
-    m_beach.erase(event.left_int);
-    m_beach.erase(event.right_int);
+    m_beach.erase(left_it);
+    m_beach.erase(right_it);
 
-    // TODO add intersection of previous peaks to beach line
-    throw -1; // the issue is that the radical sign is not very clear
+    // Update sweep location so that our beach inserts go in the correct
+    // location. Note we do this after the beach erase because technically at
+    // this event the left and right intersections meet so there might be a
+    // little strangeness with the ordering at sweep_y. Therefore just erase the
+    // points first (above)
+    *m_beach_compare.sweep_y = event.circle.center.y - event.circle.radius;
+
+    // create new intersection of the outtermost arcs (left point of left
+    // intersection and right point of right intersection)
+    std::cerr << "Creating new beach point" << std::endl;
     std::tie(it_new, success) = m_beach.emplace(event.left_int.pt_left,
             event.right_int.pt_right);
+    assert(success);
 
-    std::cerr << "New Left/Right: " << new_left_int.pt_left << ", "
-        << new_left_int.pt_right << " -- " << new_right_int.pt_left << ", "
-        << new_right_int.pt_right << std::endl;
-    if(new_left_int.pt_left != nullptr) {
-        m_events.insert(new_left_int, *it_new);
+    // create new event(s) for the meeting of the new intersection and its
+    // neighors, excepting the cases where 1) there is no neighboring
+    // intersection because the neighbor is a special endpoint (nullptr for one
+    // of its points) or 2) the neighboring intersection and new intersection
+    // have the same three points that we just processed
+    if(left_neighbor.pt_left != nullptr) {
+        // Make sure that we aren't creating a new event for the points we just
+        // processed
+        auto event_points = unique_points(left_neighbor, *it_new);
+        if(!points_match(event_points, std::make_tuple(ptA, ptB, ptC)))
+            m_events.insert(left_neighbor, *it_new);
     }
-    if(new_right_int.pt_right != nullptr) {
-        m_events.insert(*it_new, new_right_int);
+    if(right_neighbor.pt_right != nullptr) {
+        // Make sure that we aren't creating a new event for the points we just
+        // processed
+        auto event_points = unique_points(*it_new, right_neighbor);
+        if(!points_match(event_points, std::make_tuple(ptA, ptB, ptC)))
+            m_events.insert(*it_new, right_neighbor);
     }
 
 //    Line line0{*event.left_int.pt_left, *event.left_int.pt_right};
@@ -570,35 +683,21 @@ void VoronoiComputer::processEvent(const CircleEvent& event)
 //    lines.push_back(line1);
 //
 //    // finish off boundaries related to the middle point
-//    auto itb = m_bounds.find(new_left_int.pt_left, new_left_int.pt_right);
+//    auto itb = m_bounds.find(left_neighbor.pt_left, left_neighbor.pt_right);
 //    assert(itb != m_bounds.end());
-//    itb->circle_pt = new_right_int.pt_right;
+//    itb->circle_pt = right_neighbor.pt_right;
 //
-//    itb = m_bounds.find(new_right_int.pt_left, new_right_int.pt_right);
+//    itb = m_bounds.find(right_neighbor.pt_left, right_neighbor.pt_right);
 //    assert(itb != m_bounds.end());
-//    itb->circle_pt = new_left_int.pt_left;
-
-    const Point *ptA, *ptB, *ptC;
-    if(event.left_int.pt_left != event.right_int.pt_left &&
-            event.left_int.pt_right != event.right_int.pt_left) {
-        ptA = event.left_int.pt_left;
-        ptB = event.left_int.pt_right;
-        ptC = event.right_int.pt_left;
-    } else if(event.left_int.pt_left != event.right_int.pt_right &&
-            event.left_int.pt_right != event.right_int.pt_right) {
-        ptA = event.left_int.pt_left;
-        ptB = event.left_int.pt_right;
-        ptC = event.right_int.pt_right;
-    } else {
-        throw -8;
-    }
+//    itb->circle_pt = left_neighbor.pt_left;
 
     // The new center point connects to bisectors of each of the individual
     // pairs of points, these are rays from the center of the event circle to
-    // each of the bisectors
+    // each of the bisectors. Note that the first two points define the line
+    // beginning, so all 3 possible pairs of the 3 points must show up
     m_bounds.emplace_back(Boundary{ptA, ptB, ptC});
-    m_bounds.emplace_back(Boundary{ptB, ptA, ptC});
-    m_bounds.emplace_back(Boundary{ptC, ptA, ptC});
+    m_bounds.emplace_back(Boundary{ptB, ptC, ptA});
+    m_bounds.emplace_back(Boundary{ptC, ptA, ptB});
 }
 
 void VoronoiComputer::processPoint(const Point& pt)
@@ -702,7 +801,8 @@ void VoronoiComputer::compute(const std::vector<Point>& points)
     // Travel downward so at each step take
     size_t ii = 0;
     while(!m_events.empty() || ii < ordered.size()) {
-        std::cerr << "Next Point" << points[ordered[ii]] << std::endl;
+        std::cerr << "Remaining Points: " << (ordered.size() - ii) << std::endl;
+        std::cerr << "Remaining Events: " << m_events.size() << std::endl;
 
         if(m_events.empty()) {
             std::cerr << "Events Empty, processing next point" << std::endl;
@@ -750,6 +850,9 @@ std::vector<Line> VoronoiComputer::getLines()
         // was closed
         auto c = solveCircle(*it->start_pt_left, *it->start_pt_right, *it->circle_pt);
         Point pt_right = c.center;
+
+        std::cerr << "Line: (" << pt_left.x << ", " << pt_left.y << ") "
+             << "(" << pt_right.x << ", " << pt_right.y << ")" << std::endl;
         out.emplace_back(Line{pt_left, pt_right});
     }
     return out;
