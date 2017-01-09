@@ -213,7 +213,7 @@ public:
         m_queue.erase(it);
     };
 
-    void insert(const Intersection& left_int, const Intersection& right_int)
+    void insert(double sweep_y, const Intersection& left_int, const Intersection& right_int)
     {
         if(left_int.pt_left == nullptr) return;
         if(right_int.pt_right == nullptr) return;
@@ -247,6 +247,8 @@ public:
         evt.circle = solveCircle(*ptA, *ptB, *ptC);
         evt.left_int = left_int;
         evt.right_int = right_int;
+        if(evt.circle.center.y - evt.circle.radius > sweep_y)
+            return;
         m_queue.insert(evt);
     }
 
@@ -688,14 +690,14 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
         // processed
         auto event_points = unique_points(left_neighbor, *it_new);
         if(!points_match(event_points, std::make_tuple(ptA, ptB, ptC)))
-            m_events.insert(left_neighbor, *it_new);
+            m_events.insert(*m_beach_compare.sweep_y, left_neighbor, *it_new);
     }
     if(right_neighbor.pt_right != nullptr) {
         // Make sure that we aren't creating a new event for the points we just
         // processed
         auto event_points = unique_points(*it_new, right_neighbor);
         if(!points_match(event_points, std::make_tuple(ptA, ptB, ptC)))
-            m_events.insert(*it_new, right_neighbor);
+            m_events.insert(*m_beach_compare.sweep_y, *it_new, right_neighbor);
     }
 
 //    Line line0{*event.left_int.pt_left, *event.left_int.pt_right};
@@ -778,14 +780,14 @@ void Voronoi::Implementation::processPoint(const Point& pt)
         std::tie(it_new, success) = m_beach.emplace(ptB, ptD);
         assert(success);
         if(it1->pt_left != nullptr)
-            m_events.insert(*it1, *it_new);
+            m_events.insert(*m_beach_compare.sweep_y, *it1, *it_new);
 
         // Insert new intersection int beach, then create a new event for the
         // old upper intersection and the new one
         std::tie(it_new, success) = m_beach.emplace(ptD, ptB);
         assert(success);
         if(it2->pt_right != nullptr)
-            m_events.insert(*it_new, *it2);
+            m_events.insert(*m_beach_compare.sweep_y, *it_new, *it2);
 
         // Erase the event that involved the meeting of our previous left and
         // right intersections (since we got in the middle)
