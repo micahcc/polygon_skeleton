@@ -282,6 +282,27 @@ public:
 
     }
 
+    void erase(const Intersection& left_int, const Intersection& right_int)
+    {
+        CircleEvent dummy;
+        const Point* ptA, *ptB, *ptC;
+        std::tie(ptA, ptB, ptC) = unique_points(left_int.pt_left,
+                left_int.pt_right, right_int.pt_left, right_int.pt_right);
+        dummy.circle = solveCircle(*ptA, *ptB, *ptC);
+        float end_y = dummy.circle.center.y - dummy.circle.radius;
+
+        for(auto it = m_queue.lower_bound(dummy); it != m_queue.end() &&
+                !(it->circle.center.y - it->circle.radius < end_y); ++it) {
+            if(left_int.pt_left == it->left_int.pt_left &&
+                    left_int.pt_right == it->left_int.pt_right &&
+                    right_int.pt_left == it->right_int.pt_left &&
+                    right_int.pt_right == it->right_int.pt_right) {
+                it = m_queue.erase(it);
+                break;
+            }
+        }
+    }
+
     typedef std::set<CircleEvent>::iterator iterator;
     typedef std::set<CircleEvent>::const_iterator const_iterator;
 
@@ -564,6 +585,8 @@ Circle solveCircle(const Point& p, const Point& q, const Point& r)
 // Voronoi::implementation Implementation
 void Voronoi::Implementation::processEvent(const CircleEvent& event)
 {
+    assert(event.left_int.pt_right == event.right_int.pt_left);
+    assert(event.left_int.pt_right == event.right_int.pt_left);
     std::cerr << "--------\nProcessing Event at "
         << (event.circle.center.y - event.circle.radius)
         << " for: [" << *event.left_int.pt_left << " -- "
@@ -647,19 +670,24 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
 
     // Find the 3 unique points so that we can create the necessary boundary
     // lines
-    const Point* ptA, *ptB, *ptC;
-    std::tie(ptA, ptB, ptC) = unique_points(event.left_int.pt_left,
-            event.left_int.pt_right, event.right_int.pt_left,
-            event.right_int.pt_right);
+    const Point* ptA = event.left_int.pt_left;
+    const Point* ptB = event.left_int.pt_right;
+    const Point* ptC = event.right_int.pt_right;
+    //std::tie(ptA, ptB, ptC) = unique_points(event.left_int.pt_left,
+    //        event.left_int.pt_right, event.right_int.pt_left,
+    //        event.right_int.pt_right);
 
-    assert(event.left_int.pt_right == event.right_int.pt_left);
-    // We need to remove any other events involing this triplet of points either of the original
-    // intersections, since this intersection is destroyed when it meets another
-    // intersection (at a circle point). The events affected are the meeting of
-    // the two intersections and their left and right neighbors. If the
-    // intersections are dummy intersections (null point at one side, then don't
-    // erase)
+    // We need to remove any other events involing this triplet of points either
+    // of the original intersections, since this intersection is destroyed when
+    // it meets another intersection (at a circle point). The events affected
+    // are the meeting of the two intersections and their left and right
+    // neighbors. If the intersections are dummy intersections (null point at
+    // one side, then don't erase)
     m_events.erase(ptA, ptB, ptC);
+
+    // Also erase any other meetings with these two events
+    m_events.erase(left_neighbor, event.left_int);
+    m_events.erase(event.right_int, right_neighbor);
 
     // delete arc (i.e. erase both intersections related to the current event)
     std::cerr << "Erasing from beach" << std::endl;
@@ -794,7 +822,7 @@ void Voronoi::Implementation::processPoint(const Point& pt)
         if(it1->pt_left != nullptr && it2->pt_right != nullptr) {
             auto old = unique_points(it1->pt_left, it1->pt_right, it2->pt_left,
                     it2->pt_right);
-            m_events.erase(get<0>(old), get<1>(old), get<2>(old));
+            m_events.erase(*it1, *it2);
         }
     }
 
