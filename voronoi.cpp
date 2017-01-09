@@ -280,7 +280,11 @@ public:
 
     }
 
+    typedef std::set<CircleEvent>::iterator iterator;
+    typedef std::set<CircleEvent>::const_iterator const_iterator;
 
+    iterator begin() { return m_queue.begin(); };
+    iterator end() { return m_queue.end(); };
 private:
 
     std::set<CircleEvent> m_queue;
@@ -600,6 +604,21 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
     // find intersections to the left and right on the beach line, so we can
     // create a new event for when they meet
 
+
+/////// TODO need to remove out of date events when a new point is added
+    {
+    for(auto it1 = m_beach.begin(); it1 != m_beach.end(); ++it1) {
+        auto it2 = it1;
+        it2++;
+        if(it2 != m_beach.end() && !m_beach_compare(*it1, *it2)) {
+            std::cerr << it1->pt_left << ", " << it1->pt_right
+                << " comes before " << it2->pt_left << ", " << it2->pt_right
+                << "but it is not less!" << std::endl;
+            throw -1;
+        }
+    }
+    }
+
     bool success;
     BeachLineT::iterator it_new;
     std::cerr << "Looking up event location" << std::endl;
@@ -612,11 +631,17 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
     auto left_neighbor = *it;
     it++;
     auto left_it = it;
+    assert(left_it->pt_right == event.left_int.pt_right);
+    assert(left_it->pt_left == event.left_int.pt_left);
     it++;
     auto right_it = it;
+    assert(right_it->pt_right == event.right_int.pt_right);
+    assert(right_it->pt_left == event.right_int.pt_left);
     std::cerr << "Right Int: [" << *(*it).pt_left << " -- " << *(*it).pt_right << std::endl;
     it++;
     auto right_neighbor = *it;
+    assert(left_neighbor.pt_right == event.left_int.pt_left);
+    assert(right_neighbor.pt_left == event.right_int.pt_right);
 
     // Find the 3 unique points so that we can create the necessary boundary
     // lines
@@ -625,6 +650,7 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
             event.left_int.pt_right, event.right_int.pt_left,
             event.right_int.pt_right);
 
+    assert(event.left_int.pt_right == event.right_int.pt_left);
     // We need to remove any other events involing this triplet of points either of the original
     // intersections, since this intersection is destroyed when it meets another
     // intersection (at a circle point). The events affected are the meeting of
@@ -761,10 +787,13 @@ void Voronoi::Implementation::processPoint(const Point& pt)
         if(it2->pt_right != nullptr)
             m_events.insert(*it_new, *it2);
 
-        //// Erase the event that involved the meeting of our previous left and
-        //// right intersections (since we got in the middle)
-        //if(it1->pt_left != nullptr && it2->pt_right != nullptr)
-        //    m_events.erase(*it1, *it2);
+        // Erase the event that involved the meeting of our previous left and
+        // right intersections (since we got in the middle)
+        if(it1->pt_left != nullptr && it2->pt_right != nullptr) {
+            auto old = unique_points(it1->pt_left, it1->pt_right, it2->pt_left,
+                    it2->pt_right);
+            m_events.erase(get<0>(old), get<1>(old), get<2>(old));
+        }
     }
 
 
@@ -805,11 +834,11 @@ void Voronoi::Implementation::compute(const std::vector<Point>& points)
             ii++;
         } else if(ii == ordered.size()) {
             std::cerr << "Points Done, processing next event" << std::endl;
-            auto evt = m_events.front();
-            m_events.pop_front();
+            auto evt = m_events.back(); // greater y's first (decreasing y)
+            m_events.pop_back();
             processEvent(evt);
         } else {
-            auto evt = m_events.front();
+            auto evt = m_events.back(); // greater y's first (decreasing y)
             std::cerr << "Next point: " << points[ordered[ii]].y
                 << ", Next Event: " << evt.circle.center.y - evt.circle.radius
                 << std::endl;
@@ -817,17 +846,29 @@ void Voronoi::Implementation::compute(const std::vector<Point>& points)
                 processPoint(points[ordered[ii]]);
                 ii++;
             } else {
-                m_events.pop_front();
+                m_events.pop_back();
                 processEvent(evt);
             }
         }
 
         std::cerr << "Final Beach: " << std::endl;
         for(const auto& inter: m_beach) {
-            std::cerr << "(" << inter.pt_left << ", " << inter.pt_right << ")"
+            std::cerr << "(" << inter.pt_left << ", " << inter.pt_right << ")";
+            if(inter.pt_left) std::cerr << "Point 0: " << *inter.pt_left << " ";
+            if(inter.pt_right) std::cerr << "Point 1: " << *inter.pt_right << " ";
+            std::cerr << std::endl;
+        }
+
+        std::cerr << "Final Events: " << std::endl;
+        for(const auto& evt: m_events) {
+            std::cerr << "at " << (evt.circle.center.y - evt.circle.radius)
+                << "( "
+                << evt.left_int.pt_left << ", "
+                << evt.left_int.pt_right << ")"
+                << " -- "
+                << evt.right_int.pt_left << ", ("
+                << evt.right_int.pt_right << ")"
                 << std::endl;
-            if(inter.pt_left) std::cerr << "Point 0: " << *inter.pt_left << std::endl;
-            if(inter.pt_right) std::cerr << "Point 1: " << *inter.pt_right << std::endl;
         }
     }
 
