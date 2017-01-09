@@ -19,17 +19,6 @@ Point getIntersection(float sweep_y, const Point& p, double x);
 float getSign(const Intersection& intersection);
 double sqr(double v);
 
-/**
- * Something that comes up several times: which 3 of 4 points are unique
- * (assuming one reduntant pair
- */
-std::tuple<const Point*, const Point*, const Point*> unique_points(
-        const Point* pt0, const Point* pt1, const Point* pt2, const Point* pt3);
-
-std::tuple<const Point*, const Point*, const Point*> unique_points(
-        const Intersection& int0, const Intersection& int1);
-
-
 // Helper Structures
 struct Circle
 {
@@ -239,9 +228,9 @@ public:
         std::cerr << "<<<Right Point 1: " << *right_int.pt_right << std::endl;
 
         //assert(left_int.pt_right == right_int.pt_left);
-        const Point *ptA, *ptB, *ptC;
-        std::tie(ptA, ptB, ptC) = unique_points(left_int.pt_left,
-                left_int.pt_right, right_int.pt_left, right_int.pt_right);
+        auto ptA = left_int.pt_left;
+        auto ptB = left_int.pt_right;
+        auto ptC = right_int.pt_right;
 
         CircleEvent evt;
         evt.circle = solveCircle(*ptA, *ptB, *ptC);
@@ -285,9 +274,9 @@ public:
     void erase(const Intersection& left_int, const Intersection& right_int)
     {
         CircleEvent dummy;
-        const Point* ptA, *ptB, *ptC;
-        std::tie(ptA, ptB, ptC) = unique_points(left_int.pt_left,
-                left_int.pt_right, right_int.pt_left, right_int.pt_right);
+        auto ptA = left_int.pt_left;
+        auto ptB = left_int.pt_right;
+        auto ptC = right_int.pt_right;
         dummy.circle = solveCircle(*ptA, *ptB, *ptC);
         float end_y = dummy.circle.center.y - dummy.circle.radius;
 
@@ -347,39 +336,6 @@ class Voronoi::Implementation
 /**
  * Functions
  */
-
-/**
- * Something that comes up several times: which 3 of 4 points are unique
- * (assuming one reduntant pair
- */
-std::tuple<const Point*, const Point*, const Point*> unique_points(
-        const Point* pt0, const Point* pt1, const Point* pt2, const Point* pt3)
-{
-    const Point *ptA, *ptB, *ptC;
-    if(pt0 == pt1) { // pt1 is redundant
-        ptA = pt0;
-        ptB = pt2;
-        ptC = pt3;
-    } else if(pt2 == pt0 || pt2 == pt1) { // pt2 is redundant
-        ptA = pt0;
-        ptB = pt1;
-        ptC = pt3;
-    } else if(pt3 == pt0 || pt3 == pt1 || pt3 == pt2) { // pt3 is redundant
-        ptA = pt0;
-        ptB = pt1;
-        ptC = pt2;
-    } else {
-        throw -8;
-    }
-
-    return std::make_tuple(ptA, ptB, ptC);
-}
-
-std::tuple<const Point*, const Point*, const Point*> unique_points(
-        const Intersection& int0, const Intersection& int1)
-{
-    return unique_points(int0.pt_left, int0.pt_right, int1.pt_left, int1.pt_right);
-}
 
 bool points_match(std::tuple<const Point*, const Point*, const Point*> lhs,
         std::tuple<const Point*, const Point*, const Point*> rhs)
@@ -673,9 +629,6 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
     const Point* ptA = event.left_int.pt_left;
     const Point* ptB = event.left_int.pt_right;
     const Point* ptC = event.right_int.pt_right;
-    //std::tie(ptA, ptB, ptC) = unique_points(event.left_int.pt_left,
-    //        event.left_int.pt_right, event.right_int.pt_left,
-    //        event.right_int.pt_right);
 
     // We need to remove any other events involing this triplet of points either
     // of the original intersections, since this intersection is destroyed when
@@ -716,14 +669,16 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
     if(left_neighbor.pt_left != nullptr) {
         // Make sure that we aren't creating a new event for the points we just
         // processed
-        auto event_points = unique_points(left_neighbor, *it_new);
+        auto event_points = std::make_tuple(left_neighbor.pt_left,
+                it_new->pt_left, it_new->pt_right);
         if(!points_match(event_points, std::make_tuple(ptA, ptB, ptC)))
             m_events.insert(*m_beach_compare.sweep_y, left_neighbor, *it_new);
     }
     if(right_neighbor.pt_right != nullptr) {
         // Make sure that we aren't creating a new event for the points we just
         // processed
-        auto event_points = unique_points(*it_new, right_neighbor);
+        auto event_points = std::make_tuple(it_new->pt_left, it_new->pt_right,
+                right_neighbor.pt_right);
         if(!points_match(event_points, std::make_tuple(ptA, ptB, ptC)))
             m_events.insert(*m_beach_compare.sweep_y, *it_new, right_neighbor);
     }
@@ -820,8 +775,6 @@ void Voronoi::Implementation::processPoint(const Point& pt)
         // Erase the event that involved the meeting of our previous left and
         // right intersections (since we got in the middle)
         if(it1->pt_left != nullptr && it2->pt_right != nullptr) {
-            auto old = unique_points(it1->pt_left, it1->pt_right, it2->pt_left,
-                    it2->pt_right);
             m_events.erase(*it1, *it2);
         }
     }
