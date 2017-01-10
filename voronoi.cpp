@@ -472,38 +472,46 @@ Point getIntersection(float sweep_y, const Point& p, const Point& r, float sign)
     // Solve for x first
     float y_s = sweep_y;
     Point q;
-    if(std::abs(p.y - sweep_y) < 0.00001) {
+    if(std::abs(p.y - sweep_y) < 0.0000001) {
         // parabola around p has no width, just select point on parabola r at
         // p.x
         std::cerr << "<<<<p_y == sweep_y" << std::endl;
         q.x = p.x;
         q.y = 0.5*( sqr(q.x) - 2*q.x*r.x + sqr(r.x) + sqr(r.y) - sqr(y_s))/(r.y - y_s);
-    } else if(std::abs(r.y - sweep_y) < 0.00001) {
+    } else if(std::abs(r.y - sweep_y) < 0.0000001) {
         // parabola around r has no width, just select point on parabola q at
         // r.x
         std::cerr << "<<<<r_y == sweep_y" << std::endl;
         q.x = r.x;
         q.y = 0.5*(p.x*p.x + p.y*p.y - 2*p.x*q.x + q.x*q.x - y_s*y_s)/(p.y - y_s);
     } else {
-        float term1 = (p.y*r.x - p.x*r.y + (p.x - r.x)*y_s) / (p.y - r.y);
-        float rad =
-            sqrt(p.x*p.x + p.y*p.y - 2*p.x*r.x + r.x*r.x - 2*p.y*r.y + r.y*r.y)*
-            sqrt(p.y - y_s)*sqrt(r.y - y_s)/(p.y - r.y);
+        if(std::abs(p.y - r.y) > 0.0000001) {
+            float term1 = (p.y*r.x - p.x*r.y + (p.x - r.x)*y_s) / (p.y - r.y);
+            float rad =
+                sqrt(p.x*p.x + p.y*p.y - 2*p.x*r.x + r.x*r.x - 2*p.y*r.y + r.y*r.y)*
+                sqrt(p.y - y_s)*sqrt(r.y - y_s)/(p.y - r.y);
 
-        std::cerr << "<<<<"
-            << sqrt(p.x*p.x + p.y*p.y - 2*p.x*r.x + r.x*r.x - 2*p.y*r.y + r.y*r.y)
-            << ", " << sqrt( p.y - y_s) << ", " << sqrt(r.y - y_s)/(p.y - r.y) << std::endl;;
-        std::cerr << "<<<<" << term1 << " + " << sign << " * " << rad << std::endl;
-        // choose +- radical to be between
+            std::cerr << "<<<<"
+                << sqrt(p.x*p.x + p.y*p.y - 2*p.x*r.x + r.x*r.x - 2*p.y*r.y + r.y*r.y)
+                << ", " << sqrt( p.y - y_s) << ", " << sqrt(r.y - y_s)/(p.y - r.y) << std::endl;;
+            std::cerr << "<<<<" << term1 << " + " << sign << " * " << rad << std::endl;
+            // choose +- radical to be between
+            q.x = term1 + sign*std::abs(rad);
 
-        assert(!std::isnan(term1));
-        assert(!std::isnan(rad));
-        q.x = term1 + sign*std::abs(rad);
-
-        // use one of the parabolas to find y
-        q.y = 0.5*(p.x*p.x + p.y*p.y - 2*p.x*q.x + q.x*q.x - y_s*y_s)/(p.y - y_s);
+            // use one of the parabolas to find y
+            q.y = 0.5*(p.x*p.x + p.y*p.y - 2*p.x*q.x + q.x*q.x - y_s*y_s)/(p.y - y_s);
+        } else {
+            // special case: x-coord is exactly in-between
+            q.x = (p.x + r.x)*0.5;
+            q.y = 0.5*(sqr(p.x) + sqr(p.y) - 2*p.x*q.x + sqr(q.x) - sqr(y_s))/
+                (p.y - y_s);
+        }
     }
 
+    assert(!std::isinf(q.x));
+    assert(!std::isinf(q.y));
+    assert(!std::isnan(q.x));
+    assert(!std::isnan(q.y));
     std::cerr << "<<<<Solution: " << q << std::endl;
     std::cerr << "<<<<Sweep line distance0: " << (q.y - sweep_y) << "\n"
         << "<<<<Solution distance0: "
@@ -584,9 +592,6 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
 
     // find intersections to the left and right on the beach line, so we can
     // create a new event for when they meet
-
-
-/////// TODO need to remove out of date events when a new point is added
     {
     for(auto it1 = m_beach.begin(); it1 != m_beach.end(); ++it1) {
         auto it2 = it1;
@@ -756,10 +761,9 @@ void Voronoi::Implementation::processPoint(const Point& pt)
 
         std::cerr << "B: " << ptB << std::endl
             << "D: " << ptD << std::endl;
-        std::cerr << "<<<Inserting intersection of " << *ptB
-            << " -- " << *ptD << "into beach" << std::endl;
         // Insert new intersection into beach, then create an event for the old
         // left and the new intersection point
+        std::cerr << "Inserting " << ptB << ", " << ptD << " into beach" << std::endl;
         std::tie(it_new, success) = m_beach.emplace(ptB, ptD);
         assert(success);
         if(it1->pt_left != nullptr)
@@ -767,6 +771,7 @@ void Voronoi::Implementation::processPoint(const Point& pt)
 
         // Insert new intersection int beach, then create a new event for the
         // old upper intersection and the new one
+        std::cerr << "Inserting " << ptD << ", " << ptB << " into beach" << std::endl;
         std::tie(it_new, success) = m_beach.emplace(ptD, ptB);
         assert(success);
         if(it2->pt_right != nullptr)
