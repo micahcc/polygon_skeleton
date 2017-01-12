@@ -16,6 +16,10 @@ using std::get;
 
 struct Voronoi
 {
+private:
+
+    class Implementation;
+
 public:
     typedef std::shared_ptr<Voronoi> Ptr;
     typedef std::shared_ptr<const Voronoi> ConstPtr;
@@ -24,6 +28,7 @@ public:
 
     struct Edge
     {
+    public:
         typedef std::shared_ptr<Edge> Ptr;
         static constexpr size_t n_parents = 2;
 
@@ -36,7 +41,9 @@ public:
 
     struct Node
     {
+    public:
         typedef std::shared_ptr<Node> Ptr;
+        float x, y;         // position
 
         uint8_t n_parents;   // # original points that this node separates (2 or 3)
         uint8_t n_edges;     // # edges attached to this node (2 or 3)
@@ -46,7 +53,19 @@ public:
         std::shared_ptr<Edge> edges[3];     // edges attached to this node
         std::shared_ptr<Node> neighbors[3]; // other nodes attached to this one
                                             // by an edge
-        float x, y;         // position
+
+    private:
+        friend Voronoi::Implementation;
+
+        void addEdge(std::shared_ptr<Edge> edge)
+        {
+            edges[n_edges++] = edge;
+        }
+
+        void addNeighbor(std::shared_ptr<Node> node)
+        {
+            neighbors[n_neighbors++] = node;
+        }
     };
 
     Voronoi(const std::vector<Point>& points);
@@ -62,8 +81,6 @@ public:
     }
 
 private:
-
-    class Implementation;
 
     std::vector<Edge::Ptr> m_edges;
     std::vector<Node::Ptr> m_nodes;

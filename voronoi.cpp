@@ -19,6 +19,30 @@ Point getIntersection(float sweep_y, const Point& p, double x);
 float getSign(const Intersection& intersection);
 double sqr(double v);
 
+
+inline
+float perp(const Point& pt, const Point& v0, const Point& v1)
+{
+    return (pt.x - v1.x) * (v0.y - v1.y) - (v0.x - v1.x) * (pt.y - v1.y);
+}
+
+
+inline
+void orderPoints(const Point*& ptA, const Point*& ptB,
+        const Point*& ptC)
+{
+    // ABC -> ABC
+    // ACB -> ABC
+    // BAC -> ABC
+    // BCA -> ACB -> ABC
+    // CBA -> CAB -> BAC -> ABC
+    // CAB -> BAC -> ABC
+    if(ptA > ptB) std::swap(ptA, ptB);
+    if(ptB > ptC) std::swap(ptB, ptC);
+    if(ptA > ptB) std::swap(ptA, ptB);
+}
+
+
 // Helper Structures
 struct Circle
 {
@@ -321,6 +345,18 @@ class Voronoi::Implementation
     void processPoint(const Point& pt);
     void processEvent(const CircleEvent& event);
 
+    Node::Ptr getNode(const Point* ptA, const Point* ptB);
+    Node::Ptr getNode(const Point* ptA, const Point* ptB, const Point* ptC);
+
+    std::shared_ptr<Edge> addEdge(
+            Node::Ptr nodeA,
+            Node::Ptr nodeB);
+
+    void addTriplet(Node::Ptr center,
+            Node::Ptr nodeA,
+            Node::Ptr nodeB,
+            Node::Ptr nodeC);
+
     float sweep_y;
     BeachCompare m_beach_compare;
     BeachLineT m_beach;
@@ -328,7 +364,10 @@ class Voronoi::Implementation
 
     double m_min_x, m_max_x, m_min_y, m_max_y;
 
-    std::vector<Boundary> m_bounds;
+    std::unordered_map<std::tuple<const Point*, const Point*, const Point*>,
+        Node::Ptr> m_nodes;
+    std::vector<Edge::Ptr> m_edges;
+    const std::vector<Point>* m_points;
 
 	friend Voronoi;
 };
@@ -706,10 +745,39 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
     // pairs of points, these are rays from the center of the event circle to
     // each of the bisectors. Note that the first two points define the line
     // beginning, so all 3 possible pairs of the 3 points must show up
-    m_bounds.emplace_back(Boundary{ptA, ptB, ptC});
-    m_bounds.emplace_back(Boundary{ptB, ptC, ptA});
-    m_bounds.emplace_back(Boundary{ptC, ptA, ptB});
+    Node::Ptr nodeCenter = getNode(ptA, ptB, ptC);
+    Node::Ptr nodeAB = getNode(ptA, ptB);
+    Node::Ptr nodeBC = getNode(ptB, ptC);
+    Node::Ptr nodeAC = getNode(ptA, ptC);
+
+    float distAB = perp(event.circle.center, *ptA, *ptB);
+    float distBC = perp(event.circle.center, *ptB, *ptC);
+    float distCA = perp(event.circle.center, *ptC, *ptA);
+    if((distAB <= 0 && distBC <= 0 && distCA <= 0) ||
+            (distAB >= 0 && distBC >= 0 && distCA >= 0)) {
+        // point inside triangle
+        addTriplet(nodeCenter, nodeAB, nodeBC, nodeAC);
+    } else {
+        // Whichever ever side of the triangle had the opposite sign as the
+        // other two, is the one that we need to connect with
+        if((distBC <= 0 && (distCA >= 0 && distAB >=0)) ||
+                (distBC >= 0 && (distCA <= 0 && distAB <=0))) {
+            // distBC is the odd man out, move ptC into ptA so that A, B are
+            // nearest
+            std::swap(ptA, ptC);
+        } else if((distCA <= 0 && (distAB >= 0 && distBC >=0)) ||
+                (distCA >= 0 && (distAB <= 0 && distBC <=0))) {
+            // distCA is the odd man out, move ptC into ptB so that A, B are
+            // nearest
+            std::swap(ptC, ptB);
+        }
+
+        // this triplet is actually centered on the bisector nearest the center,
+        // (AB) since the center is outside the triangle
+        addTriplet(nodeAB, nodeCenter, nodeBC, nodeAC);
+    }
 }
+
 
 void Voronoi::Implementation::processPoint(const Point& pt)
 {
@@ -790,6 +858,7 @@ void Voronoi::Implementation::processPoint(const Point& pt)
 
 void Voronoi::Implementation::compute(const std::vector<Point>& points)
 {
+    m_points = &points;
     for(const auto& pt : points) {
         m_min_x = std::min<double>(pt.x, m_min_x);
         m_max_x = std::max<double>(pt.x, m_max_x);
@@ -863,6 +932,130 @@ void Voronoi::Implementation::compute(const std::vector<Point>& points)
     //return voronoi;
 }
 
+
+Voronoi::Node::Ptr Voronoi::Implementation::getNode(
+        const Point* ptA, const Point* ptB, const Point* ptC)
+{
+    orderPoints(ptA, ptB, ptC);
+    auto result = m_nodes.emplace(std::make_tuple(ptA, ptB, ptC), nullptr);
+
+    // if node exists, just return it
+    if(!result.second)
+        return result.first->second;
+
+    // create and fill out the new node
+    auto circle = solveCircle(*ptA, *ptB, *ptC);
+
+    // need to construct a new node and add its parents and location
+    auto new_node = std::make_shared<Node>();
+    result.first->second = new_node;
+
+    // Add parents
+    new_node->n_parents = 3;
+    new_node->parents[0] = (ptA - m_points->data()) / sizeof(Point);
+    new_node->parents[1] = (ptB - m_points->data()) / sizeof(Point);
+    new_node->parents[2] = (ptC - m_points->data()) / sizeof(Point);
+
+    // Add position
+    new_node->x = circle.center.x;
+    new_node->y = circle.center.y;
+
+    // Edges and neighbors can only be added once we have the edge
+    new_node->n_edges = 0;
+    new_node->n_neighbors = 0;
+
+    return new_node;
+}
+
+Voronoi::Node::Ptr Voronoi::Implementation::getNode(
+        const Point* ptA, const Point* ptB)
+{
+    if(ptA > ptB) std::swap(ptA, ptB);
+    auto result = m_nodes.emplace(std::make_tuple(ptA, ptB, nullptr), nullptr);
+
+    // if node exists, just return it
+    if(!result.second)
+        return result.first->second;
+
+    // need to construct a new node and add its parents and location
+    auto new_node = std::make_shared<Node>();
+    result.first->second = new_node;
+
+    // Add parents
+    new_node->n_parents = 2;
+    new_node->parents[0] = (ptA - m_points->data()) / sizeof(Point);
+    new_node->parents[1] = (ptB - m_points->data()) / sizeof(Point);
+
+    // Add position
+    new_node->x = (ptA->x + ptB->x)*0.5;
+    new_node->y = (ptA->y + ptB->y)*0.5;
+
+    // Edges and neighbors can only be added once we have the new edge
+    new_node->n_edges = 0;
+    new_node->n_neighbors = 0;
+    return new_node;
+}
+
+Voronoi::Edge::Ptr Voronoi::Implementation::addEdge(
+        Node::Ptr nodeA,
+        Node::Ptr nodeB)
+{
+    // the edges parents are the parents in common between the two input nodes
+    size_t common[3];
+    std::sort(nodeA->parents, nodeA->parents + nodeA->n_parents);
+    std::sort(nodeB->parents, nodeB->parents + nodeB->n_parents);
+    std::set_intersection(
+            nodeA->parents, nodeA->parents + nodeA->n_parents,
+            nodeB->parents, nodeB->parents + nodeB->n_parents,
+            common);
+
+    auto out = std::make_shared<Edge>();
+    out->n_neighbors = 0;
+    out->parents[0] = common[0];
+    out->parents[1] = common[1];
+    out->nodes[0] = nodeA;
+    out->nodes[1] = nodeB;
+
+    m_edges.push_back(out);
+    return out;
+}
+
+void Voronoi::Implementation::addTriplet(Node::Ptr center, Node::Ptr nodeA,
+        Node::Ptr nodeB, Node::Ptr nodeC)
+{
+    // edges
+    std::shared_ptr<Edge> edgeA = addEdge(nodeA, center);
+    std::shared_ptr<Edge> edgeB = addEdge(nodeB, center);
+    std::shared_ptr<Edge> edgeC = addEdge(nodeC, center);
+
+    nodeA->addEdge(edgeA);
+    nodeB->addEdge(edgeB);
+    nodeC->addEdge(edgeC);
+
+    center->addEdge(edgeA);
+    center->addEdge(edgeB);
+    center->addEdge(edgeC);
+
+    // neighbors
+    nodeA->addNeighbor(center);
+    nodeB->addNeighbor(center);
+    nodeC->addNeighbor(center);
+
+    center->addNeighbor(nodeA);
+    center->addNeighbor(nodeB);
+    center->addNeighbor(nodeC);
+
+//    // add edge neighbors
+//    edgeA->addNeighbor(edgeB);
+//    edgeA->addNeighbor(edgeC);
+//
+//    edgeB->addNeighbor(edgeA);
+//    edgeB->addNeighbor(edgeC);
+//
+//    edgeC->addNeighbor(edgeA);
+//    edgeC->addNeighbor(edgeB);
+}
+
 Voronoi::Voronoi(const std::vector<Point>& points)
 {
     using std::unordered_map;
@@ -872,87 +1065,19 @@ Voronoi::Voronoi(const std::vector<Point>& points)
     Implementation impl;
     impl.compute(points);
 
-    unordered_map<tuple<const Point*, const Point*, const Point*>, Node::Ptr> circle_nodes;
-    unordered_map<tuple<const Point*, const Point*>, Node::Ptr> bisect_nodes;;
-    for(const auto& bound: impl.m_bounds) {
-        // bound connects the firs 2 points to the circle point with the 3rd
-        Node::Ptr circle_node, bisect_node;
-        const Point* ptA = std::min(bound.start_pt_left, bound.start_pt_right);
-        const Point* ptB = std::max(bound.start_pt_left, bound.start_pt_right);
-        const Point* ptC = bound.circle_pt;
-
-        // Create / get circle node
-        auto circle_result = circle_nodes.emplace(make_tuple(ptA, ptB, ptC), nullptr);
-        if(circle_result.second) {
-            // need to construct a new node and add its parents and location
-            auto new_node = std::make_shared<Node>();
-            circle_result.first->second = new_node;
-            m_nodes.push_back(new_node);
-
-            // Add parents
-            new_node->n_parents = 3;
-            new_node->parents[0] = (ptA - points.data()) / sizeof(Point);
-            new_node->parents[1] = (ptB - points.data()) / sizeof(Point);
-            new_node->parents[2] = (ptC - points.data()) / sizeof(Point);
-
-            // Add position
-            auto circle = solveCircle(*ptA, *ptB, *ptC);
-            new_node->x = circle.center.x;
-            new_node->y = circle.center.y;
-
-            // Edges and neighbors can only be added once we have the new edge
-            new_node->n_edges = 0;
-            new_node->n_neighbors = 0;
-        }
-        circle_node = circle_result.first->second;
-
-        // Create / get bisector node
-        auto bisect_result = bisect_nodes.emplace(make_tuple(ptA, ptB), nullptr);
-        if(bisect_result.second) {
-            // need to construct a new node and add its parents and location
-            auto new_node = std::make_shared<Node>();
-            bisect_result.first->second = new_node;
-            m_nodes.push_back(new_node);
-
-            // Add parents
-            new_node->n_parents = 2;
-            new_node->parents[0] = (ptA - points.data()) / sizeof(Point);
-            new_node->parents[1] = (ptB - points.data()) / sizeof(Point);
-
-            // Add position
-            new_node->x = (ptA->x + ptB->x)*0.5;
-            new_node->y = (ptA->y + ptB->y)*0.5;
-
-            // Edges and neighbors can only be added once we have the new edge
-            new_node->n_edges = 0;
-            new_node->n_neighbors = 0;
-        }
-        bisect_node = bisect_result.first->second;
-
-        // Make nodes neighbors
-        bisect_node->neighbors[bisect_node->n_neighbors++] = circle_node;
-        circle_node->neighbors[circle_node->n_neighbors++] = bisect_node;
-
-        /* Create edge */
-        auto edge = std::make_shared<Edge>();
-        m_edges.push_back(edge);
-        edge->n_neighbors = 0;
-
-        // Add edge's parents
-        edge->parents[0] = (ptA - points.data()) / sizeof(Point);
-        edge->parents[1] = (ptB - points.data()) / sizeof(Point);
-
-        // Set edge's nodes (endpoints)
-        edge->nodes[0] = circle_node;
-        edge->nodes[1] = bisect_node;
-
-        // Add edge to nodes
-        bisect_node->edges[bisect_node->n_edges++] = edge;
-        circle_node->edges[circle_node->n_edges++] = edge;
+    std::cerr << "Done with computation" << std::endl;
+    m_nodes.clear();
+    m_nodes.reserve(impl.m_nodes.size());
+    for(const auto& tup_node: impl.m_nodes) {
+        m_nodes.push_back(tup_node.second);
+        std::cerr << m_nodes.back()->x << ", " << m_nodes.back()->y << std::endl;
     }
+    m_edges = impl.m_edges;
 
     // add edge's neighbors by copying the neighbors of
     for(Edge::Ptr edge : m_edges) {
+        std::cerr << edge->nodes[0]->x << ", " << edge->nodes[0]->y << " -- "
+            << edge->nodes[1]->x << ", " << edge->nodes[1]->y << std::endl;
         for(auto ii = 0; ii < edge->nodes[0]->n_edges; ii++) {
             Edge::Ptr neighbor = edge->nodes[0]->edges[ii];
             if(neighbor != edge)

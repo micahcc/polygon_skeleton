@@ -8,7 +8,7 @@ int main()
 {
     const size_t POINT_RADIUS = 5;
     std::vector<Point> points{
-        {600, 600},
+        {600, 300},
         {900, 500},
         {500, 100},
         {100, 300},
