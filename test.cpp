@@ -11,15 +11,15 @@ int main()
         {600, 300},
         {900, 500},
         {500, 100},
-        {100, 300},
-        {1000, 100},
+//        {100, 300},
+        {1000, 200},
     };
 
     Voronoi graph(points);
     //auto vpoints = result.getPoints();
 
     //result.getLines();
-    svg::Dimensions dimensions(1000, 1000);
+    svg::Dimensions dimensions(1200, 1200);
     svg::Document doc("my_svg.svg", svg::Layout(dimensions, svg::Layout::BottomLeft));
 
     for(const auto& pt: points) {

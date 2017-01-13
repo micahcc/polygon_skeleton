@@ -92,6 +92,6 @@ struct Line
 static
 std::ostream& operator<<(std::ostream& os, const Point& pt)
 {
-    os << "(" << pt.x << ", " << pt.y << ")";
+    os << pt.x << ", " << pt.y;
     return os;
 }

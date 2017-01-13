@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <cmath>
+#include <iterator>
 
 #include "std_ext.h"
 #include "geometry.h"
@@ -23,7 +24,7 @@ double sqr(double v);
 inline
 float perp(const Point& pt, const Point& v0, const Point& v1)
 {
-    return (pt.x - v1.x) * (v0.y - v1.y) - (v0.x - v1.x) * (pt.y - v1.y);
+    return (pt.x - v1.x) * (v0.y - v1.y) - (pt.y - v1.y) * (v0.x - v1.x);
 }
 
 
@@ -265,42 +266,20 @@ public:
         m_queue.insert(evt);
     }
 
-    void erase(const Point* ptA, const Point* ptB, const Point* ptC)
-    {
-        CircleEvent dummy;
-        dummy.circle = solveCircle(*ptA, *ptB, *ptC);
-        float end_y = dummy.circle.center.y - dummy.circle.radius;
-        auto it = m_queue.lower_bound(dummy);
-        while(it != m_queue.end() &&
-                !(it->circle.center.y - it->circle.radius < end_y)) {
-
-            int point_matches = 0;
-            if(ptA == it->left_int.pt_left || ptA == it->left_int.pt_right ||
-                    ptA == it->right_int.pt_left || ptA == it->right_int.pt_right)
-                point_matches++;
-
-            if(ptB == it->left_int.pt_left || ptB == it->left_int.pt_right ||
-                    ptB == it->right_int.pt_left || ptB == it->right_int.pt_right)
-                point_matches++;
-
-            if(ptC == it->left_int.pt_left || ptC == it->left_int.pt_right ||
-                    ptC == it->right_int.pt_left || ptC == it->right_int.pt_right)
-                point_matches++;
-
-            if(point_matches == 3)
-                it = m_queue.erase(it);
-            else
-                it++;
-        }
-
-    }
 
     void erase(const Intersection& left_int, const Intersection& right_int)
     {
         CircleEvent dummy;
-        auto ptA = left_int.pt_left;
-        auto ptB = left_int.pt_right;
-        auto ptC = right_int.pt_right;
+        const Point* ptA = left_int.pt_left;
+        const Point* ptB = left_int.pt_right;
+        const Point* ptC = right_int.pt_right;
+        assert(ptB != nullptr);
+
+        // no event to erase since one of the "intersections" is the null
+        // intersection
+        if(ptA == nullptr || ptC == nullptr)
+            return;
+
         dummy.circle = solveCircle(*ptA, *ptB, *ptC);
         float end_y = dummy.circle.center.y - dummy.circle.radius;
 
@@ -674,15 +653,7 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
     const Point* ptB = event.left_int.pt_right;
     const Point* ptC = event.right_int.pt_right;
 
-    // We need to remove any other events involing this triplet of points either
-    // of the original intersections, since this intersection is destroyed when
-    // it meets another intersection (at a circle point). The events affected
-    // are the meeting of the two intersections and their left and right
-    // neighbors. If the intersections are dummy intersections (null point at
-    // one side, then don't erase)
-    m_events.erase(ptA, ptB, ptC);
-
-    // Also erase any other meetings with these two events
+    // erase any other meetings with these two events
     m_events.erase(left_neighbor, event.left_int);
     m_events.erase(event.right_int, right_neighbor);
 
@@ -740,6 +711,11 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
 //    itb = m_bounds.find(right_neighbor.pt_left, right_neighbor.pt_right);
 //    assert(itb != m_bounds.end());
 //    itb->circle_pt = left_neighbor.pt_left;
+        for(const auto& tup_node: m_nodes) {
+            assert(tup_node.second != nullptr);
+            std::cerr << tup_node.second->x << ", "
+                << tup_node.second->y << std::endl;
+        }
 
     // The new center point connects to bisectors of each of the individual
     // pairs of points, these are rays from the center of the event circle to
@@ -748,33 +724,45 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
     Node::Ptr nodeCenter = getNode(ptA, ptB, ptC);
     Node::Ptr nodeAB = getNode(ptA, ptB);
     Node::Ptr nodeBC = getNode(ptB, ptC);
-    Node::Ptr nodeAC = getNode(ptA, ptC);
+    Node::Ptr nodeCA = getNode(ptA, ptC);
+    assert(nodeCenter != nullptr);
+    assert(nodeAB != nullptr);
+    assert(nodeBC != nullptr);
+    assert(nodeCA != nullptr);
 
+        for(const auto& tup_node: m_nodes) {
+            assert(tup_node.second != nullptr);
+            std::cerr << tup_node.second->x << ", "
+                << tup_node.second->y << std::endl;
+        }
     float distAB = perp(event.circle.center, *ptA, *ptB);
     float distBC = perp(event.circle.center, *ptB, *ptC);
     float distCA = perp(event.circle.center, *ptC, *ptA);
     if((distAB <= 0 && distBC <= 0 && distCA <= 0) ||
             (distAB >= 0 && distBC >= 0 && distCA >= 0)) {
         // point inside triangle
-        addTriplet(nodeCenter, nodeAB, nodeBC, nodeAC);
+        addTriplet(nodeCenter, nodeAB, nodeBC, nodeCA);
     } else {
         // Whichever ever side of the triangle had the opposite sign as the
         // other two, is the one that we need to connect with
+        std::cerr << "center = ["<< event.circle.center << "]"
+            << "\n\ttriangle = [" << *ptA << ";"
+            << "\n\t" << *ptB << ";"
+            << "\n\t" << *ptC << "]"
+            << std::endl;
         if((distBC <= 0 && (distCA >= 0 && distAB >=0)) ||
                 (distBC >= 0 && (distCA <= 0 && distAB <=0))) {
             // distBC is the odd man out, move ptC into ptA so that A, B are
             // nearest
-            std::swap(ptA, ptC);
+            addTriplet(nodeBC, nodeCenter, nodeCA, nodeAB);
         } else if((distCA <= 0 && (distAB >= 0 && distBC >=0)) ||
                 (distCA >= 0 && (distAB <= 0 && distBC <=0))) {
-            // distCA is the odd man out, move ptC into ptB so that A, B are
-            // nearest
-            std::swap(ptC, ptB);
+            // distCA is the odd man out, swap nodeAB and nodeCA
+            addTriplet(nodeCA, nodeCenter, nodeAB, nodeBC);
+        } else {
+            addTriplet(nodeAB, nodeCenter, nodeBC, nodeCA);
         }
 
-        // this triplet is actually centered on the bisector nearest the center,
-        // (AB) since the center is outside the triangle
-        addTriplet(nodeAB, nodeCenter, nodeBC, nodeAC);
     }
 }
 
@@ -873,6 +861,9 @@ void Voronoi::Implementation::compute(const std::vector<Point>& points)
     std::sort(ordered.begin(), ordered.end(),
             [&](size_t ii, size_t jj) { return points[ii].y > points[jj].y; });
 
+    // stop when circle event's centers are after this
+    double last_y = points[ordered.back()].y;
+
     std::cerr << "Ordered points: " << std::endl;
     for(size_t ii : ordered) {
         std::cerr << points[ii] << std::endl;
@@ -892,6 +883,7 @@ void Voronoi::Implementation::compute(const std::vector<Point>& points)
         } else if(ii == ordered.size()) {
             std::cerr << "Points Done, processing next event" << std::endl;
             auto evt = m_events.back(); // greater y's first (decreasing y)
+            std::cerr << evt.circle.center.y << std::endl;
             m_events.pop_back();
             processEvent(evt);
         } else {
@@ -927,6 +919,12 @@ void Voronoi::Implementation::compute(const std::vector<Point>& points)
                 << evt.right_int.pt_right << ")"
                 << std::endl;
         }
+
+        for(const auto& tup_node: m_nodes) {
+            assert(tup_node.second != nullptr);
+            std::cerr << tup_node.second->x << ", "
+                << tup_node.second->y << std::endl;
+        }
     }
 
     //return voronoi;
@@ -940,8 +938,10 @@ Voronoi::Node::Ptr Voronoi::Implementation::getNode(
     auto result = m_nodes.emplace(std::make_tuple(ptA, ptB, ptC), nullptr);
 
     // if node exists, just return it
-    if(!result.second)
+    if(!result.second) {
+        assert(result.first->second != nullptr);
         return result.first->second;
+    }
 
     // create and fill out the new node
     auto circle = solveCircle(*ptA, *ptB, *ptC);
@@ -951,18 +951,13 @@ Voronoi::Node::Ptr Voronoi::Implementation::getNode(
     result.first->second = new_node;
 
     // Add parents
-    new_node->n_parents = 3;
-    new_node->parents[0] = (ptA - m_points->data()) / sizeof(Point);
-    new_node->parents[1] = (ptB - m_points->data()) / sizeof(Point);
-    new_node->parents[2] = (ptC - m_points->data()) / sizeof(Point);
+    new_node->parents.insert((ptA - m_points->data()) / sizeof(Point));
+    new_node->parents.insert((ptB - m_points->data()) / sizeof(Point));
+    new_node->parents.insert((ptC - m_points->data()) / sizeof(Point));
 
     // Add position
     new_node->x = circle.center.x;
     new_node->y = circle.center.y;
-
-    // Edges and neighbors can only be added once we have the edge
-    new_node->n_edges = 0;
-    new_node->n_neighbors = 0;
 
     return new_node;
 }
@@ -974,25 +969,23 @@ Voronoi::Node::Ptr Voronoi::Implementation::getNode(
     auto result = m_nodes.emplace(std::make_tuple(ptA, ptB, nullptr), nullptr);
 
     // if node exists, just return it
-    if(!result.second)
+    if(!result.second) {
+        assert(result.first->second != nullptr);
         return result.first->second;
+    }
 
     // need to construct a new node and add its parents and location
     auto new_node = std::make_shared<Node>();
     result.first->second = new_node;
 
     // Add parents
-    new_node->n_parents = 2;
-    new_node->parents[0] = (ptA - m_points->data()) / sizeof(Point);
-    new_node->parents[1] = (ptB - m_points->data()) / sizeof(Point);
+    new_node->parents.insert((ptA - m_points->data()) / sizeof(Point));
+    new_node->parents.insert((ptB - m_points->data()) / sizeof(Point));
 
     // Add position
     new_node->x = (ptA->x + ptB->x)*0.5;
     new_node->y = (ptA->y + ptB->y)*0.5;
 
-    // Edges and neighbors can only be added once we have the new edge
-    new_node->n_edges = 0;
-    new_node->n_neighbors = 0;
     return new_node;
 }
 
@@ -1001,21 +994,19 @@ Voronoi::Edge::Ptr Voronoi::Implementation::addEdge(
         Node::Ptr nodeB)
 {
     // the edges parents are the parents in common between the two input nodes
-    size_t common[3];
-    std::sort(nodeA->parents, nodeA->parents + nodeA->n_parents);
-    std::sort(nodeB->parents, nodeB->parents + nodeB->n_parents);
+    std::set<size_t> common;
     std::set_intersection(
-            nodeA->parents, nodeA->parents + nodeA->n_parents,
-            nodeB->parents, nodeB->parents + nodeB->n_parents,
-            common);
+            nodeA->parents.begin(), nodeA->parents.end(),
+            nodeB->parents.begin(), nodeB->parents.end(),
+            std::inserter(common, common.begin()));
 
     auto out = std::make_shared<Edge>();
-    out->n_neighbors = 0;
-    out->parents[0] = common[0];
-    out->parents[1] = common[1];
+    out->parents = common;
     out->nodes[0] = nodeA;
     out->nodes[1] = nodeB;
-
+    std::cerr << "adding edge!" << std::endl;
+    std::cerr << "edge = [" << nodeA->x << ", " << nodeA->y << ";"
+        << nodeB->x << ", " << nodeB->y << "]" << std::endl;
     m_edges.push_back(out);
     return out;
 }
@@ -1028,32 +1019,22 @@ void Voronoi::Implementation::addTriplet(Node::Ptr center, Node::Ptr nodeA,
     std::shared_ptr<Edge> edgeB = addEdge(nodeB, center);
     std::shared_ptr<Edge> edgeC = addEdge(nodeC, center);
 
-    nodeA->addEdge(edgeA);
-    nodeB->addEdge(edgeB);
-    nodeC->addEdge(edgeC);
+    nodeA->edges.insert(edgeA);
+    nodeB->edges.insert(edgeB);
+    nodeC->edges.insert(edgeC);
 
-    center->addEdge(edgeA);
-    center->addEdge(edgeB);
-    center->addEdge(edgeC);
+    center->edges.insert(edgeA);
+    center->edges.insert(edgeB);
+    center->edges.insert(edgeC);
 
     // neighbors
-    nodeA->addNeighbor(center);
-    nodeB->addNeighbor(center);
-    nodeC->addNeighbor(center);
+    nodeA->neighbors.insert(center);
+    nodeB->neighbors.insert(center);
+    nodeC->neighbors.insert(center);
 
-    center->addNeighbor(nodeA);
-    center->addNeighbor(nodeB);
-    center->addNeighbor(nodeC);
-
-//    // add edge neighbors
-//    edgeA->addNeighbor(edgeB);
-//    edgeA->addNeighbor(edgeC);
-//
-//    edgeB->addNeighbor(edgeA);
-//    edgeB->addNeighbor(edgeC);
-//
-//    edgeC->addNeighbor(edgeA);
-//    edgeC->addNeighbor(edgeB);
+    center->neighbors.insert(nodeA);
+    center->neighbors.insert(nodeB);
+    center->neighbors.insert(nodeC);
 }
 
 Voronoi::Voronoi(const std::vector<Point>& points)
@@ -1069,6 +1050,7 @@ Voronoi::Voronoi(const std::vector<Point>& points)
     m_nodes.clear();
     m_nodes.reserve(impl.m_nodes.size());
     for(const auto& tup_node: impl.m_nodes) {
+        assert(tup_node.second != nullptr);
         m_nodes.push_back(tup_node.second);
         std::cerr << m_nodes.back()->x << ", " << m_nodes.back()->y << std::endl;
     }
@@ -1078,15 +1060,13 @@ Voronoi::Voronoi(const std::vector<Point>& points)
     for(Edge::Ptr edge : m_edges) {
         std::cerr << edge->nodes[0]->x << ", " << edge->nodes[0]->y << " -- "
             << edge->nodes[1]->x << ", " << edge->nodes[1]->y << std::endl;
-        for(auto ii = 0; ii < edge->nodes[0]->n_edges; ii++) {
-            Edge::Ptr neighbor = edge->nodes[0]->edges[ii];
+        for(const auto& neighbor : edge->nodes[0]->edges) {
             if(neighbor != edge)
-                edge->neighbors[edge->n_neighbors++] = neighbor;
+                edge->neighbors.insert(neighbor);
         }
-        for(auto ii = 0; ii < edge->nodes[1]->n_edges; ii++) {
-            Edge::Ptr neighbor = edge->nodes[1]->edges[ii];
+        for(const auto& neighbor : edge->nodes[1]->edges) {
             if(neighbor != edge)
-                edge->neighbors[edge->n_neighbors++] = neighbor;
+                edge->neighbors.insert(neighbor);
         }
     }
 }

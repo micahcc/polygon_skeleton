@@ -26,46 +26,40 @@ public:
 
     struct Node;
 
-    struct Edge
+    class Edge
     {
     public:
         typedef std::shared_ptr<Edge> Ptr;
-        static constexpr size_t n_parents = 2;
 
-        uint8_t n_neighbors;
+        // original points that this edge separates
+        std::set<size_t> parents;
 
-        size_t parents[n_parents]; // original points that this edge separates
-        std::shared_ptr<Node> nodes[2];      // endpoints for the edge
-        std::shared_ptr<Edge> neighbors[6];  // other edges adjacent to this one
+        // endpoints for the edge
+        std::shared_ptr<Node> nodes[2];
+
+        // other edges adjacent to this one
+        std::set<std::shared_ptr<Edge>> neighbors;
     };
 
-    struct Node
+    class Node
     {
     public:
         typedef std::shared_ptr<Node> Ptr;
-        float x, y;         // position
 
-        uint8_t n_parents;   // # original points that this node separates (2 or 3)
-        uint8_t n_edges;     // # edges attached to this node (2 or 3)
-        uint8_t n_neighbors; // # other nodes connected to this by an edge 2 or 3
+        // position
+        float x, y;
 
-        size_t parents[3];  // original points that this node separates (2 or 3)
-        std::shared_ptr<Edge> edges[3];     // edges attached to this node
-        std::shared_ptr<Node> neighbors[3]; // other nodes attached to this one
-                                            // by an edge
+        // original points that this node separates (2 or 3)
+        std::set<size_t> parents;
+
+        // edges attached to this node
+        std::set<std::shared_ptr<Edge>> edges;
+
+        // other nodes attached to this one by an edge
+        std::set<std::shared_ptr<Node>> neighbors;
 
     private:
         friend Voronoi::Implementation;
-
-        void addEdge(std::shared_ptr<Edge> edge)
-        {
-            edges[n_edges++] = edge;
-        }
-
-        void addNeighbor(std::shared_ptr<Node> node)
-        {
-            neighbors[n_neighbors++] = node;
-        }
     };
 
     Voronoi(const std::vector<Point>& points);
