@@ -1,4 +1,5 @@
 #include "voronoi.h"
+#include "debug.h"
 
 #include <unordered_map>
 #include <cmath>
@@ -15,11 +16,11 @@ typedef std::set<Intersection, BeachCompare> BeachLineT;
 
 // Helper Functions
 Circle solveCircle(const Point& p, const Point& q, const Point& r);
+Point getIntersection(float sweep_y, const Intersection& inter);
 Point getIntersection(float sweep_y, const Point& p, const Point& r, float sign);
 Point getIntersection(float sweep_y, const Point& p, double x);
 float getSign(const Intersection& intersection);
 double sqr(double v);
-
 
 inline
 float perp(const Point& pt, const Point& v0, const Point& v1)
@@ -143,8 +144,7 @@ struct BeachCompare
             assert(rhs.pt_left != rhs.pt_right);
             assert(!(lhs_n_infinite || lhs_p_infinite || rhs_n_infinite ||
                         rhs_p_infinite));
-            Point right = getIntersection(*sweep_y, *rhs.pt_left, *rhs.pt_right,
-                    getSign(rhs));
+            Point right = getIntersection(*sweep_y, rhs);
             result = lhs.pt_left->x < right.x;
         } else if(rhs.pt_left == rhs.pt_right) {
             // Special case, intersection of two identical points is assumed to
@@ -152,18 +152,15 @@ struct BeachCompare
             assert(lhs.pt_left != lhs.pt_right);
             assert(!(lhs_n_infinite || lhs_p_infinite || rhs_n_infinite ||
                         rhs_p_infinite));
-            Point left  = getIntersection(*sweep_y, *lhs.pt_left, *lhs.pt_right,
-                    getSign(lhs));
+            Point left  = getIntersection(*sweep_y, lhs);
             result = left.x < rhs.pt_left->x;
         } else {
             // get intersection of left two parabolas, and compare x with
             // intersection of right two
             assert(!(lhs_n_infinite || lhs_p_infinite || rhs_n_infinite || rhs_p_infinite));
             std::cerr << "<<<Computing intersections" << std::endl;
-            Point left  = getIntersection(*sweep_y, *lhs.pt_left, *lhs.pt_right,
-                    getSign(lhs));
-            Point right = getIntersection(*sweep_y, *rhs.pt_left, *rhs.pt_right,
-                    getSign(rhs));
+            Point left  = getIntersection(*sweep_y, lhs);
+            Point right = getIntersection(*sweep_y, rhs);
             std::cerr << "<<<" << (left.x < right.x) << std::endl;
             result = left.x < right.x;
         }
@@ -261,8 +258,29 @@ public:
         evt.circle = solveCircle(*ptA, *ptB, *ptC);
         evt.left_int = left_int;
         evt.right_int = right_int;
+
+        // if this is going to happen behind the current sweep, then don't
+        // insert. This is effectively a new event behind the beach
         if(evt.circle.center.y - evt.circle.radius > sweep_y)
             return;
+
+        // There can only be 1 circle point for 3 points, ensure that these two
+        // intersection actually meet at the circle, othwise don't creat the
+        // event
+        auto left_int_pt = getIntersection(
+                evt.circle.center.y - evt.circle.radius, left_int);
+        auto right_int_pt = getIntersection(
+                evt.circle.center.y - evt.circle.radius, left_int);
+        std::cerr << "---------------------" << std::endl;
+        std::cerr << left_int_pt << " vs " << evt.circle.center << "\n";
+        std::cerr << right_int_pt << " vs " << evt.circle.center << "\n";
+        std::cerr << "---------------------" << std::endl;
+        if(distance2d(left_int_pt, evt.circle.center) > 0.001 ||
+                distance2d(right_int_pt, evt.circle.center) > 0.001) {
+            // these intersections actually don't meet!
+            std::cerr << "No good!" << std::endl;
+            return;
+        }
         m_queue.insert(evt);
     }
 
@@ -300,6 +318,8 @@ public:
 
     iterator begin() { return m_queue.begin(); };
     iterator end() { return m_queue.end(); };
+    const_iterator cbegin() const { return m_queue.cbegin(); };
+    const_iterator cend() const { return m_queue.cend(); };
 private:
 
     std::set<CircleEvent> m_queue;
@@ -460,6 +480,12 @@ float getSign(const Intersection& intersection)
     }
 }
 
+Point getIntersection(float sweep_y, const Intersection& inter)
+{
+    assert(inter.pt_left != nullptr);
+    assert(inter.pt_right != nullptr);
+    return getIntersection(sweep_y, *inter.pt_left, *inter.pt_right, getSign(inter));
+}
 
 Point getIntersection(float sweep_y, const Point& p, const Point& r, float sign)
 {
@@ -540,6 +566,7 @@ Point getIntersection(float sweep_y, const Point& p, const Point& r, float sign)
     return q;
 }
 
+inline
 double sqr(double v) {
     return v*v;
 }
@@ -571,9 +598,9 @@ void Voronoi::Implementation::processEvent(const CircleEvent& event)
     assert(event.left_int.pt_right == event.right_int.pt_left);
     std::cerr << "--------\nProcessing Event at "
         << (event.circle.center.y - event.circle.radius)
-        << " for: [" << *event.left_int.pt_left << " -- "
-        << *event.left_int.pt_right << "], " << *event.right_int.pt_left << " -- "
-        << *event.right_int.pt_right << "]\n";
+        << " for: [" << event.left_int.pt_left << " -- "
+        << event.left_int.pt_right << "], [" << event.right_int.pt_left << " -- "
+        << event.right_int.pt_right << "]\n";
 
     // This essentially locks in the results of a single point (the middle part
     // of the two intersections, that means we must remove all events related to
@@ -872,18 +899,26 @@ void Voronoi::Implementation::compute(const std::vector<Point>& points)
 
     // Travel downward so at each step take
     size_t ii = 0;
+    double prev_sweep = NAN;
+    double sweep = NAN;
     while(!m_events.empty() || ii < ordered.size()) {
         std::cerr << "Remaining Points: " << (ordered.size() - ii) << std::endl;
         std::cerr << "Remaining Events: " << m_events.size() << std::endl;
 
         if(m_events.empty()) {
             std::cerr << "Events Empty, processing next point" << std::endl;
+            sweep = points[ordered[ii]].y;
+            draw_state(m_beach, m_events, prev_sweep, sweep);
+            prev_sweep = sweep;
             processPoint(points[ordered[ii]]);
             ii++;
         } else if(ii == ordered.size()) {
             std::cerr << "Points Done, processing next event" << std::endl;
             auto evt = m_events.back(); // greater y's first (decreasing y)
             std::cerr << evt.circle.center.y << std::endl;
+            sweep = evt.circle.center.y - evt.circle.radius;
+            draw_state(m_beach, m_events, prev_sweep, sweep);
+            prev_sweep = sweep;
             m_events.pop_back();
             processEvent(evt);
         } else {
@@ -892,9 +927,15 @@ void Voronoi::Implementation::compute(const std::vector<Point>& points)
                 << ", Next Event: " << evt.circle.center.y - evt.circle.radius
                 << std::endl;
             if(points[ordered[ii]].y > evt.circle.center.y - evt.circle.radius) {
+                sweep = points[ordered[ii]].y;
+                draw_state(m_beach, m_events, prev_sweep, sweep);
+                prev_sweep = sweep;
                 processPoint(points[ordered[ii]]);
                 ii++;
             } else {
+                sweep = evt.circle.center.y - evt.circle.radius;
+                draw_state(m_beach, m_events, prev_sweep, sweep);
+                    prev_sweep = sweep;
                 m_events.pop_back();
                 processEvent(evt);
             }
