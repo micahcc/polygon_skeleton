@@ -8,11 +8,11 @@ int main()
 {
     const size_t POINT_RADIUS = 5;
     std::vector<Point> points{
-        {600, 300},
-        {900, 500},
-        {500, 100},
+        {460, 430},
+        {490, 450},
+        {450, 410},
 //        {100, 300},
-        {1000, 200},
+        {500, 420},
     };
 
     Voronoi graph(points);
