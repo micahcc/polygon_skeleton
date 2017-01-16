@@ -51,14 +51,20 @@ namespace svg
         ss << attribute_name << "=\"" << value << unit << "\" ";
         return ss.str();
     }
+
+    static
     std::string elemStart(std::string const & element_name)
     {
         return "\t<" + element_name + " ";
     }
+
+    static
     std::string elemEnd(std::string const & element_name)
     {
         return "</" + element_name + ">\n";
     }
+
+    static
     std::string emptyElemEnd()
     {
         return "/>\n";
@@ -103,6 +109,8 @@ namespace svg
         double x;
         double y;
     };
+
+    static
     optional<Point> getMinPoint(std::vector<Point> const & points)
     {
         if (points.empty())
@@ -117,6 +125,8 @@ namespace svg
         }
         return optional<Point>(min);
     }
+
+    static
     optional<Point> getMaxPoint(std::vector<Point> const & points)
     {
         if (points.empty())
@@ -147,6 +157,7 @@ namespace svg
     };
 
     // Convert coordinates in user space to SVG native space.
+    static
     double translateX(double x, Layout const & layout)
     {
         if (layout.origin == Layout::BottomRight || layout.origin == Layout::TopRight)
@@ -155,6 +166,7 @@ namespace svg
             return (layout.origin_offset.x + x) * layout.scale;
     }
 
+    static
     double translateY(double y, Layout const & layout)
     {
         if (layout.origin == Layout::BottomLeft || layout.origin == Layout::BottomRight)
@@ -162,6 +174,8 @@ namespace svg
         else
             return (layout.origin_offset.y + y) * layout.scale;
     }
+
+    static
     double translateScale(double dimension, Layout const & layout)
     {
         return dimension * layout.scale;
@@ -455,9 +469,9 @@ namespace svg
     {
     public:
        Path(Fill const & fill = Fill(), Stroke const & stroke = Stroke())
-          : Shape(fill, stroke) 
+          : Shape(fill, stroke)
        {  startNewSubPath(); }
-       Path(Stroke const & stroke = Stroke()) : Shape(Color::Transparent, stroke) 
+       Path(Stroke const & stroke = Stroke()) : Shape(Color::Transparent, stroke)
        {  startNewSubPath(); }
        Path & operator<<(Point const & point)
        {
