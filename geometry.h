@@ -83,6 +83,13 @@ float norm(const Vector& lhs)
     return std::sqrt(normSquared(lhs));
 }
 
+static
+float distance2d(const Point& lhs, const Point& rhs)
+{
+    return std::sqrt((lhs.x - rhs.x)*(lhs.x - rhs.x) +
+                     (lhs.y - rhs.y)*(lhs.y - rhs.y));
+}
+
 struct Line
 {
     Point pt0;
