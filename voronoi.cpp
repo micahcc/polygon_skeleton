@@ -271,14 +271,13 @@ public:
                 evt.circle.center.y - evt.circle.radius, left_int);
         auto right_int_pt = getIntersection(
                 evt.circle.center.y - evt.circle.radius, left_int);
-        std::cerr << "---------------------" << std::endl;
-        std::cerr << left_int_pt << " vs " << evt.circle.center << "\n";
-        std::cerr << right_int_pt << " vs " << evt.circle.center << "\n";
-        std::cerr << "---------------------" << std::endl;
-        if(distance2d(left_int_pt, evt.circle.center) > 0.001 ||
-                distance2d(right_int_pt, evt.circle.center) > 0.001) {
-            // these intersections actually don't meet!
-            std::cerr << "No good!" << std::endl;
+        double d1 = distance2d(left_int_pt, evt.circle.center);
+        double d2 = distance2d(right_int_pt, evt.circle.center);
+        if(d1 > evt.circle.radius|| d2 > evt.circle.radius) {
+            // the intersections should essentially be at the center of the
+            // center of the circle. In diverging intersections the distances
+            // from the center to intersections will far exceed the radius of
+            // the circle.
             return;
         }
         m_queue.insert(evt);
